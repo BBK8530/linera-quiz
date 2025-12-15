@@ -5,6 +5,7 @@ SHELL ["bash", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     protobuf-compiler \
+    libprotobuf-dev \
     clang \
     make \
     curl \

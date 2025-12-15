@@ -16,7 +16,7 @@ if [ ! -f "$LINERA_WALLET" ]; then
     linera wallet init --faucet https://faucet.testnet-conway.linera.net
 else
     echo "Wallet already exists, skipping initialization"
-fi
+fi  
 
 # Request a new chain and capture output (CHAIN and OWNER)
 CHAIN_OWNER=($(linera wallet request-chain --faucet https://faucet.testnet-conway.linera.net))
@@ -45,7 +45,7 @@ echo "Environment variables saved to: $ENV_FILE"
 # Start Linera service
 echo "Starting Linera service on port 8080..."
 # Save backend logs to file
-linera service --port 8080 > "$SCRIPT_DIR/service.log" 2>&1 &
+linera service --port 8080 > "/build/service.log" 2>&1 &
 SERVICE_PID=$!
 echo "Linera service started, PID: $SERVICE_PID"
 echo "service logs saved to: /build/service.log"
@@ -60,9 +60,6 @@ if [ ! -d "node_modules" ]; then
     echo "Installing frontend dependencies..."
     npm install
 fi
-
-# Build frontend
-npm run build
 
 # Start frontend development server in background
 echo "=== Starting Frontend Development Server ==="

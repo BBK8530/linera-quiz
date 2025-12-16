@@ -3,12 +3,222 @@
 
 /*! ABI of the Quiz Application */
 
-use async_graphql::{InputObject, SimpleObject};
+use async_graphql::{InputObject, OutputType, SimpleObject, Union};
 use linera_sdk::graphql::GraphQLMutationRoot;
 use linera_sdk::linera_base_types::{ContractAbi, ServiceAbi};
 use serde::{Deserialize, Serialize};
 
 pub mod state;
+
+/// Quiz不存在错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct QuizNotFoundError {
+    pub quiz_id: u64,
+}
+
+/// Quiz尚未开始错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct QuizNotStartedError {
+    pub quiz_id: u64,
+}
+
+/// Quiz已经结束错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct QuizEndedError {
+    pub quiz_id: u64,
+}
+
+/// 用户已经提交过该Quiz错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct AlreadySubmittedError {
+    pub user: String,
+    pub quiz_id: u64,
+}
+
+/// 用户未认证错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct UnauthorizedError {
+    pub message: String,
+}
+
+/// 输入参数无效错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct InvalidInputError {
+    pub message: String,
+}
+
+/// 答案格式错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct InvalidAnswerFormatError {
+    pub message: String,
+}
+
+/// 时间戳格式错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct InvalidTimestampFormatError {
+    pub message: String,
+}
+
+/// 时间范围错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct InvalidTimeRangeError {
+    pub message: String,
+}
+
+/// 存储操作失败错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct StorageError {
+    pub message: String,
+}
+
+/// 其他未知错误
+#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+pub struct OtherError {
+    pub message: String,
+}
+
+/// 应用可能返回的错误类型联合
+#[derive(Debug, Serialize, Deserialize, Union)]
+pub enum QuizError {
+    /// Quiz不存在
+    QuizNotFound(QuizNotFoundError),
+    /// Quiz尚未开始
+    QuizNotStarted(QuizNotStartedError),
+    /// Quiz已经结束
+    QuizEnded(QuizEndedError),
+    /// 用户已经提交过该Quiz
+    AlreadySubmitted(AlreadySubmittedError),
+    /// 用户未认证
+    Unauthorized(UnauthorizedError),
+    /// 输入参数无效
+    InvalidInput(InvalidInputError),
+    /// 答案格式错误
+    InvalidAnswerFormat(InvalidAnswerFormatError),
+    /// 时间戳格式错误
+    InvalidTimestampFormat(InvalidTimestampFormatError),
+    /// 时间范围错误
+    InvalidTimeRange(InvalidTimeRangeError),
+    /// 存储操作失败
+    StorageError(StorageError),
+    /// 其他未知错误
+    Other(OtherError),
+}
+
+/// 带错误处理的响应类型
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuizResult<T> {
+    /// 成功时的结果数据
+    pub data: Option<T>,
+    /// 错误信息
+    pub error: Option<QuizError>,
+}
+
+#[async_graphql::Object]
+impl<T: OutputType + Send + Sync> QuizResult<T> {
+    async fn data(&self) -> Option<&T> {
+        self.data.as_ref()
+    }
+    
+    async fn error(&self) -> Option<&QuizError> {
+        self.error.as_ref()
+    }
+}
+
+impl<T> QuizResult<T> {
+    /// 创建成功响应
+    pub fn success(data: T) -> Self {
+        QuizResult {
+            data: Some(data),
+            error: None,
+        }
+    }
+    
+    /// 创建错误响应
+    pub fn from_error(error: QuizError) -> Self {
+        QuizResult {
+            data: None,
+            error: Some(error),
+        }
+    }
+    
+    /// 创建Quiz不存在错误
+    pub fn quiz_not_found(quiz_id: u64) -> Self {
+        QuizResult::from_error(QuizError::QuizNotFound(QuizNotFoundError {
+            quiz_id,
+        }))
+    }
+    
+    /// 创建Quiz尚未开始错误
+    pub fn quiz_not_started(quiz_id: u64) -> Self {
+        QuizResult::from_error(QuizError::QuizNotStarted(QuizNotStartedError {
+            quiz_id,
+        }))
+    }
+    
+    /// 创建Quiz已经结束错误
+    pub fn quiz_ended(quiz_id: u64) -> Self {
+        QuizResult::from_error(QuizError::QuizEnded(QuizEndedError {
+            quiz_id,
+        }))
+    }
+    
+    /// 创建用户已经提交过该Quiz错误
+    pub fn already_submitted(user: String, quiz_id: u64) -> Self {
+        QuizResult::from_error(QuizError::AlreadySubmitted(AlreadySubmittedError {
+            user,
+            quiz_id,
+        }))
+    }
+    
+    /// 创建用户未认证错误
+    pub fn unauthorized() -> Self {
+        QuizResult::from_error(QuizError::Unauthorized(UnauthorizedError {
+            message: "User is not authenticated".to_string(),
+        }))
+    }
+    
+    /// 创建输入参数无效错误
+    pub fn invalid_input(message: String) -> Self {
+        QuizResult::from_error(QuizError::InvalidInput(InvalidInputError {
+            message,
+        }))
+    }
+    
+    /// 创建答案格式错误
+    pub fn invalid_answer_format(message: String) -> Self {
+        QuizResult::from_error(QuizError::InvalidAnswerFormat(InvalidAnswerFormatError {
+            message,
+        }))
+    }
+    
+    /// 创建时间戳格式错误
+    pub fn invalid_timestamp_format(message: String) -> Self {
+        QuizResult::from_error(QuizError::InvalidTimestampFormat(InvalidTimestampFormatError {
+            message,
+        }))
+    }
+    
+    /// 创建时间范围错误
+    pub fn invalid_time_range(message: String) -> Self {
+        QuizResult::from_error(QuizError::InvalidTimeRange(InvalidTimeRangeError {
+            message,
+        }))
+    }
+    
+    /// 创建存储操作失败错误
+    pub fn storage_error(message: String) -> Self {
+        QuizResult::from_error(QuizError::StorageError(StorageError {
+            message,
+        }))
+    }
+    
+    /// 创建其他未知错误
+    pub fn other_error(message: String) -> Self {
+        QuizResult::from_error(QuizError::Other(OtherError {
+            message,
+        }))
+    }
+}
 
 pub struct QuizAbi;
 
@@ -141,7 +351,7 @@ pub enum QueryResponse {
 
 impl ContractAbi for QuizAbi {
     type Operation = Operation;
-    type Response = ();
+    type Response = QuizResult<()>;
 }
 
 impl ServiceAbi for QuizAbi {

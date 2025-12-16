@@ -135,24 +135,24 @@ const router = useRouter();
 
 const { loading, error, result } = useQuery(GET_ALL_QUIZ_SETS);
 
-// 计算属性，当result.value变化时自动更新
+// Computed property, automatically updates when result.value changes
 const quizSets = computed(() => result.value?.quizSets || []);
 
-// 格式化时间戳为可读格式
+// Format timestamp to readable format
 const formatDateTime = (timestamp: string) => {
   try {
-    // 转换为毫秒并创建Date对象
-    const date = new Date(Number(timestamp) / 1000); // 微秒转毫秒
+    // Convert to milliseconds and create Date object
+    const date = new Date(Number(timestamp) / 1000); // Convert microseconds to milliseconds
     return date.toLocaleString();
   } catch (error) {
     return "Invalid date";
   }
 };
 
-// 时间状态检查逻辑
+// Time status check logic
 const currentTime = ref(Date.now());
 
-// 检查测验时间状态
+// Check quiz time status
 const checkQuizStatus = (quiz: any) => {
   const now = currentTime.value;
   const startTime = Number(quiz.startTime) / 1000;
@@ -163,11 +163,11 @@ const checkQuizStatus = (quiz: any) => {
   return "available";
 };
 
-// 定时器定期更新时间
+// Timer to update time periodically
 let timeCheckTimer: NodeJS.Timeout;
 
 onMounted(() => {
-  // 每分钟更新一次当前时间
+  // Update current time every minute
   timeCheckTimer = setInterval(() => {
     currentTime.value = Date.now();
   }, 60000);

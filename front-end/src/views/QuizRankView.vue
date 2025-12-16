@@ -1,6 +1,46 @@
 <template>
   <div class="w-full max-w-4xl mx-auto">
-    <v-card elevation="8" rounded="2xl" class="mb-6">
+    <!-- 加载状态 -->
+    <v-card v-if="loading" elevation="8" rounded="2xl" class="my-6 py-16">
+      <v-card-text class="text-center">
+        <v-progress-circular
+          indeterminate
+          size="64"
+          color="primary"
+          class="mb-6"
+        ></v-progress-circular>
+        <p class="text-xl text-gray-600 font-medium">Loading rankings...</p>
+      </v-card-text>
+    </v-card>
+
+    <!-- 错误状态 -->
+    <v-card v-else-if="errorMessage" elevation="8" rounded="2xl" class="my-6 border-l-4 border-error">
+      <v-card-text class="p-8">
+        <div class="flex items-start">
+          <v-icon class="mr-4 text-error" size="32">
+            mdi-alert-circle
+          </v-icon>
+          <div>
+            <h3 class="text-lg font-medium text-gray-900">
+              Loading failed
+            </h3>
+            <p class="mt-2 text-sm text-gray-600">
+              {{ errorMessage }}
+            </p>
+            <div class="mt-6">
+              <v-btn
+                color="primary"
+                variant="outlined"
+                @click="router.push('/')"
+                >Return to home</v-btn
+              >
+            </div>
+          </div>
+        </div>
+      </v-card-text>
+    </v-card>
+
+    <v-card v-else elevation="8" rounded="2xl" class="mb-6">
       <v-card-title
         class="bg-gradient-to-r from-primary to-primary/90 text-white py-6 px-8"
       >
@@ -98,7 +138,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@vue/apollo-composable";
 import { GET_QUIZ_LEADERBOARD, GET_QUIZ_SET } from "../graphql/quizQueries";
 
@@ -107,6 +147,8 @@ const searchQuery = ref("");
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
 const quizTitle = ref("");
+const loading = ref(false);
+const errorMessage = ref("");
 
 // 表头配置
 const headers = [
@@ -127,6 +169,7 @@ watch(
 
 // 路由
 const route = useRoute();
+const router = useRouter();
 const quizId = computed(() => parseInt(route.params.quizId as string, 10) || 0);
 
 // 使用GraphQL查询获取问卷信息和排名数据

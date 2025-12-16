@@ -111,7 +111,7 @@ import { useRouter } from "vue-router";
 import { provideApolloClient } from "@vue/apollo-composable";
 import { apolloClient } from "./apollo";
 
-// 为@vue/apollo-composable提供Apollo Client
+// Provide Apollo Client for @vue/apollo-composable
 provideApolloClient(apolloClient);
 
 const authStore = useAuthStore();

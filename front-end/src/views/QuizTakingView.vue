@@ -248,7 +248,9 @@ const {
 });
 
 // 计算属性
-const quiz = computed(() => quizData.value?.quizSet || null);
+const quizResult = computed(() => quizData.value?.quizSet || null);
+const quiz = computed(() => quizResult.value?.data || null);
+const quizError = computed(() => quizResult.value?.error || null);
 const currentQuestion = computed(() => {
   return quiz.value?.questions[currentQuestionIndex.value];
 });
@@ -390,7 +392,18 @@ const submitQuiz = async () => {
     };
 
     // 提交答案
-    await submitAnswersMutation({ field0: params });
+    const result = await submitAnswersMutation({ field0: params });
+    if (!result) {
+      errorMessage.value = "提交失败，请稍后重试";
+      return;
+    }
+    const submitResult = result.data?.submitAnswers;
+    
+    // 检查是否有错误
+    if (submitResult?.error) {
+      errorMessage.value = parseErrorMessage(submitResult.error);
+      return;
+    }
 
     // 跳转到排名页面
     router.push(`/quiz-rank/${quizId}`);
@@ -398,6 +411,25 @@ const submitQuiz = async () => {
     errorMessage.value = "提交失败，请稍后重试";
     console.error("Quiz submission error:", err);
   }
+};
+
+// 解析错误信息
+const parseErrorMessage = (error: any): string => {
+  if (!error) return "";
+  
+  if (error.quizNotFound) return `测验不存在: ID ${error.quizNotFound.value}`;
+  if (error.quizNotStarted) return `测验尚未开始: ID ${error.quizNotStarted.value}`;
+  if (error.quizEnded) return `测验已结束: ID ${error.quizEnded.value}`;
+  if (error.alreadySubmitted) return `${error.alreadySubmitted.user} 已经提交过该测验: ID ${error.alreadySubmitted.value}`;
+  if (error.unauthorized) return "未授权访问，请先登录";
+  if (error.invalidInput) return `输入参数无效: ${error.invalidInput.value}`;
+  if (error.invalidAnswerFormat) return `答案格式错误: ${error.invalidAnswerFormat.value}`;
+  if (error.invalidTimestampFormat) return `时间戳格式错误: ${error.invalidTimestampFormat.value}`;
+  if (error.invalidTimeRange) return `时间范围错误: ${error.invalidTimeRange.value}`;
+  if (error.storageError) return `存储操作失败: ${error.storageError.value}`;
+  if (error.other) return `其他错误: ${error.other.value}`;
+  
+  return "未知错误";
 };
 
 // 初始化问卷数据
@@ -414,6 +446,12 @@ const initQuizData = async () => {
 
     // 重新获取数据
     await refetch();
+
+    // 检查是否有错误
+    if (quizError.value) {
+      errorMessage.value = parseErrorMessage(quizError.value);
+      return;
+    }
 
     if (!quiz.value || quiz.value.questions.length === 0) {
       errorMessage.value = "问卷不存在或内容为空";

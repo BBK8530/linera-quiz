@@ -98,7 +98,7 @@
         </v-row>
 
         <!-- 错误状态 -->
-        <v-row v-else-if="error" justify="center">
+        <v-row v-else-if="error || errorMessage" justify="center">
           <v-col class="text-center py-12 bg-gray-50 rounded-xl">
             <v-alert
               type="error"
@@ -106,7 +106,7 @@
               title="Failed to load quizzes"
               class="mb-6"
             >
-              {{ error.message }}
+              {{ errorMessage || error?.message }}
             </v-alert>
             <v-btn
               @click="processQuizData()"
@@ -261,6 +261,7 @@ const authStore = useAuthStore();
 const router = useRouter();
 const searchTerm = ref("");
 const sortBy = ref("createdAt");
+const errorMessage = ref("");
 
 // 排序选项
 const sortOptions = [
@@ -338,6 +339,25 @@ const totalPages = ref(1);
 const currentPage = ref(1);
 const pageSize = ref(6);
 
+// 解析错误信息
+const parseErrorMessage = (error: any): string => {
+  if (!error) return "";
+  
+  if (error.quizNotFound) return `测验不存在: ID ${error.quizNotFound.value}`;
+  if (error.quizNotStarted) return `测验尚未开始: ID ${error.quizNotStarted.value}`;
+  if (error.quizEnded) return `测验已结束: ID ${error.quizEnded.value}`;
+  if (error.alreadySubmitted) return `${error.alreadySubmitted.user} 已经提交过该测验: ID ${error.alreadySubmitted.value}`;
+  if (error.unauthorized) return "未授权访问，请先登录";
+  if (error.invalidInput) return `输入参数无效: ${error.invalidInput.value}`;
+  if (error.invalidAnswerFormat) return `答案格式错误: ${error.invalidAnswerFormat.value}`;
+  if (error.invalidTimestampFormat) return `时间戳格式错误: ${error.invalidTimestampFormat.value}`;
+  if (error.invalidTimeRange) return `时间范围错误: ${error.invalidTimeRange.value}`;
+  if (error.storageError) return `存储操作失败: ${error.storageError.value}`;
+  if (error.other) return `其他错误: ${error.other.value}`;
+  
+  return "未知错误";
+};
+
 // 处理查询结果
 const processQuizData = () => {
   if (!data.value?.getUserCreatedQuizzes) {
@@ -347,7 +367,18 @@ const processQuizData = () => {
     return;
   }
 
-  let quizzes = [...data.value.getUserCreatedQuizzes];
+  const queryResult = data.value.getUserCreatedQuizzes;
+  
+  // 检查是否有错误
+  if (queryResult.error) {
+    errorMessage.value = parseErrorMessage(queryResult.error);
+    filteredQuizzes.value = [];
+    totalQuizzes.value = 0;
+    totalPages.value = 1;
+    return;
+  }
+
+  let quizzes = [...(queryResult.data || [])];
 
   // 搜索功能
   if (searchTerm.value) {

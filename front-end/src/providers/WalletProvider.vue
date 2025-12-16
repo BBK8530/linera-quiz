@@ -4,7 +4,7 @@ import { InMemoryWallet } from "@linera/client";
 
 import Web3 from "web3";
 
-// 创建钱包上下文
+// Create wallet context
 const walletContext = {
   account: ref(null),
   isConnected: ref(false),
@@ -16,27 +16,27 @@ const walletContext = {
   disconnectWallet: null,
 };
 
-// 提供上下文供应用使用
+// Provide context for application use
 provide("wallet", walletContext);
 
-// 内部状态
+// Internal state
 const wallet = ref(null);
 
 const reconnectTimeout = ref(null);
 
-// 格式化账户地址
+// Format account address
 const getFormattedAccount = (account) => {
   if (!account) return null;
   return account.startsWith("0x") ? account : `0x${account}`;
 };
 
-// 连接钱包
+// Connect wallet
 const connectWallet = async () => {
   walletContext.isLoading.value = true;
   walletContext.error.value = null;
 
   try {
-    // 生成随机InMemoryWallet
+    // Generate random InMemoryWallet
     wallet.value = new InMemoryWallet();
     const account = await wallet.value.getAccounts();
     const formattedAccount = getFormattedAccount(account[0]);
@@ -46,7 +46,7 @@ const connectWallet = async () => {
     walletContext.walletType.value = "in-memory";
     walletContext.isConnected.value = true;
 
-    console.log("随机生成钱包:", formattedAccount);
+    console.log("Randomly generated wallet:", formattedAccount);
 
     console.log(
       `Wallet connected: in-memory, Account: ${walletContext.account.value}`
@@ -59,7 +59,7 @@ const connectWallet = async () => {
   }
 };
 
-// 断开钱包连接
+// Disconnect wallet
 const disconnectWallet = () => {
   walletContext.account.value = null;
   walletContext.isConnected.value = false;
@@ -68,28 +68,28 @@ const disconnectWallet = () => {
   wallet.value = null;
 };
 
-// 暴露方法
+// Expose methods
 walletContext.connectWallet = connectWallet;
 walletContext.disconnectWallet = disconnectWallet;
 
-// 组件挂载时自动连接钱包
+// Auto-connect wallet when component mounts
 onMounted(() => {
-  // 自动生成并连接钱包
+  // Auto-generate and connect wallet
   connectWallet().catch((err) => {
     console.error("Failed to auto-connect wallet:", err);
   });
 });
 
-// 组件卸载时清理
+// Cleanup when component unmounts
 onUnmounted(() => {
   if (reconnectTimeout.value) clearTimeout(reconnectTimeout.value);
 });
 
-// 提供wallet实例访问
+// Provide wallet instance access
 provide("lineraWallet", wallet);
 </script>
 
 <template>
-  <!-- 钱包提供器不需要渲染内容，仅提供上下文 -->
+  <!-- Wallet provider doesn't need to render content, only provides context -->
   <slot />
 </template>

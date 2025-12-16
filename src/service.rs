@@ -6,7 +6,7 @@ use linera_sdk::linera_base_types::WithServiceAbi;
 use linera_sdk::views::View;
 use linera_sdk::{Service, ServiceRuntime};
 use quiz::state::QuizState;
-use quiz::{Operation, QuestionView, QuizAttempt, QuizSetView, UserAttemptView};
+use quiz::{Operation, QuestionView, QuizAttempt, QuizSetView, UserAttemptView, QuizResult};
 use std::sync::Arc;
 
 linera_sdk::service!(QuizService);
@@ -23,35 +23,41 @@ struct QueryRoot {
 
 #[async_graphql::Object]
 impl QueryRoot {
-    async fn quiz_set(&self, quiz_id: u64) -> Option<QuizSetView> {
+    async fn quiz_set(&self, quiz_id: u64) -> QuizResult<QuizSetView> {
         match self.state.quiz_sets.get(&quiz_id).await {
-            Ok(option) => option.map(|quiz| QuizSetView {
-                id: quiz.id,
-                title: quiz.title.clone(),
-                description: quiz.description.clone(),
-                creator: quiz.creator,
-                questions: quiz
-                    .questions
-                    .iter()
-                    .map(|q| QuestionView {
-                        id: q.id,
-                        text: q.text.clone(),
-                        options: q.options.clone(),
-                        points: q.points,
+            Ok(option) => {
+                if let Some(quiz) = option {
+                    QuizResult::success(QuizSetView {
+                        id: quiz.id,
+                        title: quiz.title.clone(),
+                        description: quiz.description.clone(),
+                        creator: quiz.creator,
+                        questions: quiz
+                            .questions
+                            .iter()
+                            .map(|q| QuestionView {
+                                id: q.id,
+                                text: q.text.clone(),
+                                options: q.options.clone(),
+                                points: q.points,
+                            })
+                            .collect(),
+                        start_time: quiz.start_time.micros().to_string(),
+                        end_time: quiz.end_time.micros().to_string(),
+                        created_at: quiz.created_at.micros().to_string(),
                     })
-                    .collect(),
-                start_time: quiz.start_time.micros().to_string(),
-                end_time: quiz.end_time.micros().to_string(),
-                created_at: quiz.created_at.micros().to_string(),
-            }),
-            Err(_) => None,
+                } else {
+                    QuizResult::quiz_not_found(quiz_id)
+                }
+            },
+            Err(e) => QuizResult::storage_error(format!("Failed to get quiz: {:?}", e)),
         }
     }
 
-    async fn quiz_sets(&self) -> Vec<QuizSetView> {
+    async fn quiz_sets(&self) -> QuizResult<Vec<QuizSetView>> {
         let mut quiz_sets = Vec::new();
 
-        let _ = self
+        match self
             .state
             .quiz_sets
             .for_each_index_value(|_key, quiz| {
@@ -78,15 +84,17 @@ impl QueryRoot {
                 quiz_sets.push(quiz_view);
                 Ok(())
             })
-            .await;
-
-        quiz_sets
+            .await
+        {
+            Ok(_) => QuizResult::success(quiz_sets),
+            Err(e) => QuizResult::storage_error(format!("Failed to get quizzes: {:?}", e)),
+        }
     }
 
-    async fn user_attempts(&self, user: String) -> Vec<QuizAttempt> {
+    async fn user_attempts(&self, user: String) -> QuizResult<Vec<QuizAttempt>> {
         let mut attempts = Vec::new();
 
-        let _ = self
+        match self
             .state
             .user_attempts
             .for_each_index_value(|(quiz_id, u), attempt| {
@@ -107,15 +115,17 @@ impl QueryRoot {
                 }
                 Ok(())
             })
-            .await;
-
-        attempts
+            .await
+        {
+            Ok(_) => QuizResult::success(attempts),
+            Err(e) => QuizResult::storage_error(format!("Failed to get user attempts: {:?}", e)),
+        }
     }
 
-    async fn leaderboard(&self) -> Vec<UserAttemptView> {
+    async fn leaderboard(&self) -> QuizResult<Vec<UserAttemptView>> {
         let mut entries = std::collections::HashMap::new();
 
-        let _ = self
+        match self
             .state
             .user_attempts
             .for_each_index_value(|(_quiz_id, user), attempt| {
@@ -131,27 +141,31 @@ impl QueryRoot {
                 }
                 Ok(())
             })
-            .await;
-
-        let mut leaderboard: Vec<_> = entries
-            .into_iter()
-            .map(|(user, (score, time_taken))| UserAttemptView {
-                quiz_id: 0,
-                user,
-                answers: Vec::new(),
-                score,
-                time_taken,
-                completed_at: self.runtime.system_time().micros().to_string(),
-            })
-            .collect();
-        leaderboard.sort_by(|a, b| b.score.cmp(&a.score).then(a.time_taken.cmp(&b.time_taken)));
-        leaderboard
+            .await
+        {
+            Ok(_) => {
+                let mut leaderboard: Vec<_> = entries
+                    .into_iter()
+                    .map(|(user, (score, time_taken))| UserAttemptView {
+                        quiz_id: 0,
+                        user,
+                        answers: Vec::new(),
+                        score,
+                        time_taken,
+                        completed_at: self.runtime.system_time().micros().to_string(),
+                    })
+                    .collect();
+                leaderboard.sort_by(|a, b| b.score.cmp(&a.score).then(a.time_taken.cmp(&b.time_taken)));
+                QuizResult::success(leaderboard)
+            },
+            Err(e) => QuizResult::storage_error(format!("Failed to get leaderboard: {:?}", e)),
+        }
     }
 
-    async fn quiz_leaderboard(&self, quiz_id: u64) -> Vec<UserAttemptView> {
+    async fn quiz_leaderboard(&self, quiz_id: u64) -> QuizResult<Vec<UserAttemptView>> {
         let mut entries = std::collections::HashMap::new();
 
-        let _ = self
+        match self
             .state
             .user_attempts
             .for_each_index_value(|(q_id, user), attempt| {
@@ -168,35 +182,41 @@ impl QueryRoot {
                 }
                 Ok(())
             })
-            .await;
-
-        let mut leaderboard: Vec<_> = entries
-            .into_iter()
-            .map(
-                |(user, (score, time_taken, completed_at))| UserAttemptView {
-                    quiz_id,
-                    user,
-                    answers: Vec::new(),
-                    score,
-                    time_taken,
-                    completed_at: completed_at,
-                },
-            )
-            .collect();
-        leaderboard.sort_by(|a, b| b.score.cmp(&a.score).then(a.time_taken.cmp(&b.time_taken)));
-        leaderboard
-    }
-
-    async fn user_participations(&self, user: String) -> Vec<u64> {
-        match self.state.user_participations.get(&user).await {
-            Ok(Some(v)) => v,
-            Ok(None) => Vec::default(),
-            Err(_) => Vec::default(),
+            .await
+        {
+            Ok(_) => {
+                let mut leaderboard: Vec<_> = entries
+                    .into_iter()
+                    .map(
+                        |(user, (score, time_taken, completed_at))| UserAttemptView {
+                            quiz_id,
+                            user,
+                            answers: Vec::new(),
+                            score,
+                            time_taken,
+                            completed_at: completed_at,
+                        },
+                    )
+                    .collect();
+                leaderboard.sort_by(|a, b| b.score.cmp(&a.score).then(a.time_taken.cmp(&b.time_taken)));
+                QuizResult::success(leaderboard)
+            },
+            Err(e) => QuizResult::storage_error(format!("Failed to get quiz leaderboard: {:?}", e)),
         }
     }
-    async fn get_user_created_quizzes(&self, nickname: String) -> Vec<QuizSetView> {
+
+    async fn user_participations(&self, user: String) -> QuizResult<Vec<u64>> {
+        match self.state.user_participations.get(&user).await {
+            Ok(Some(v)) => QuizResult::success(v),
+            Ok(None) => QuizResult::success(Vec::default()),
+            Err(e) => QuizResult::storage_error(format!("Failed to get user participations: {:?}", e)),
+        }
+    }
+    
+    async fn get_user_created_quizzes(&self, nickname: String) -> QuizResult<Vec<QuizSetView>> {
         let mut created_quizzes = Vec::new();
-        let _ = self
+        
+        match self
             .state
             .quiz_sets
             .for_each_index_value(|_key, quiz| {
@@ -224,43 +244,46 @@ impl QueryRoot {
                 }
                 Ok(())
             })
-            .await;
-        created_quizzes
+            .await
+        {
+            Ok(_) => QuizResult::success(created_quizzes),
+            Err(e) => QuizResult::storage_error(format!("Failed to get user created quizzes: {:?}", e)),
+        }
     }
 
-    async fn get_user_participated_quizzes(&self, nickname: String) -> Vec<QuizSetView> {
+    async fn get_user_participated_quizzes(&self, nickname: String) -> QuizResult<Vec<QuizSetView>> {
         let mut participated_quizzes = Vec::new();
-        let quiz_ids = self
-            .state
-            .user_participations
-            .get(&nickname)
-            .await
-            .unwrap()
-            .unwrap_or_default();
-        for &quiz_id in &quiz_ids {
-            if let Some(quiz_set) = self.state.quiz_sets.get(&quiz_id).await.unwrap() {
-                participated_quizzes.push(QuizSetView {
-                    id: quiz_set.id,
-                    title: quiz_set.title.clone(),
-                    description: quiz_set.description.clone(),
-                    creator: quiz_set.creator.clone(),
-                    questions: quiz_set
-                        .questions
-                        .iter()
-                        .map(|q| QuestionView {
-                            id: q.id,
-                            text: q.text.clone(),
-                            options: q.options.clone(),
-                            points: q.points,
-                        })
-                        .collect(),
-                    start_time: quiz_set.start_time.micros().to_string(),
-                    end_time: quiz_set.end_time.micros().to_string(),
-                    created_at: quiz_set.created_at.micros().to_string(),
-                });
-            }
+        
+        match self.state.user_participations.get(&nickname).await {
+            Ok(Some(quiz_ids)) => {
+                for quiz_id in quiz_ids {
+                    if let Ok(Some(quiz_set)) = self.state.quiz_sets.get(&quiz_id).await {
+                        participated_quizzes.push(QuizSetView {
+                            id: quiz_set.id,
+                            title: quiz_set.title.clone(),
+                            description: quiz_set.description.clone(),
+                            creator: quiz_set.creator.clone(),
+                            questions: quiz_set
+                                .questions
+                                .iter()
+                                .map(|q| QuestionView {
+                                    id: q.id,
+                                    text: q.text.clone(),
+                                    options: q.options.clone(),
+                                    points: q.points,
+                                })
+                                .collect(),
+                            start_time: quiz_set.start_time.micros().to_string(),
+                            end_time: quiz_set.end_time.micros().to_string(),
+                            created_at: quiz_set.created_at.micros().to_string(),
+                        });
+                    }
+                }
+                QuizResult::success(participated_quizzes)
+            },
+            Ok(None) => QuizResult::success(Vec::new()),
+            Err(e) => QuizResult::storage_error(format!("Failed to get user participated quizzes: {:?}", e)),
         }
-        participated_quizzes
     }
 }
 

@@ -96,14 +96,14 @@ v-card-text.p-8,
 
 body {
   margin: 0;
-  /* 注释全局flex布局以避免覆盖Tailwind布局类 */
+  /* Comment out global flex layout to avoid overriding Tailwind layout classes */
   /* display: flex;
   place-items: center; */
   min-width: 320px;
   min-height: 100vh;
 }
 
-/* 注释全局h1标签样式以避免覆盖Tailwind类 */
+/* Comment out global h1 tag styles to avoid overriding Tailwind classes */
 /* h1 {
   font-size: 3.2em;
   line-height: 1.1;
@@ -132,7 +132,7 @@ button:focus-visible {
   padding: 2em;
 }
 
-/* 注释#app样式以避免覆盖Tailwind容器类 */
+/* Comment out #app styles to avoid overriding Tailwind container classes */
 /* #app {
   max-width: 1280px;
   margin: 0 auto;
@@ -145,7 +145,7 @@ button:focus-visible {
     color: #213547;
     background-color: #ffffff;
   }
-  /* 移除全局a标签样式覆盖 */
+  /* Remove global a tag style override */
   /* a {
      color: #1a1a1a;
      text-decoration: none;
@@ -155,7 +155,7 @@ button:focus-visible {
      text-decoration: underline;
   } */
   
-  /* 移除全局标题样式覆盖 */
+  /* Remove global heading style override */
   /* h1, h2, h3, h4, h5, h6 {
      font-weight: 600;
      margin-bottom: 0.5rem;

@@ -34,14 +34,14 @@ export const useQuizStore = defineStore('quiz', () => {
   const quizzes = ref<Quiz[]>([]);
   const submissions = ref<QuizSubmission[]>([]);
 
-  // 初始化数据 - 从localStorage加载
+  // Initialize data - load from localStorage
   const initQuizzes = () => {
     const savedQuizzes = localStorage.getItem('quizzes');
     const savedSubmissions = localStorage.getItem('submissions');
 
     if (savedQuizzes) {
       quizzes.value = JSON.parse(savedQuizzes);
-      // 转换字符串日期为Date对象
+      // Convert string dates to Date objects
       quizzes.value.forEach(quiz => {
         quiz.createdAt = new Date(quiz.createdAt);
       });
@@ -56,7 +56,7 @@ export const useQuizStore = defineStore('quiz', () => {
     }
   };
 
-  // 创建新问卷
+  // Create new quiz
   const createQuiz = (title: string, description: string, creatorId: string): Quiz => {
     const newQuiz: Quiz = {
       id: uuidv4(),
@@ -72,7 +72,7 @@ export const useQuizStore = defineStore('quiz', () => {
     return newQuiz;
   };
 
-  // 添加问题到问卷
+  // Add question to quiz
   const addQuestion = (quizId: string, question: Omit<Question, 'id'>): boolean => {
     const quizIndex = quizzes.value.findIndex(q => q.id === quizId);
     if (quizIndex === -1) return false;
@@ -90,7 +90,7 @@ export const useQuizStore = defineStore('quiz', () => {
     return true;
   };
   
-  // 提交问卷答案并计算分数
+  // Submit quiz answers and calculate score
   const submitQuiz = (
     quizId: string,
     userId: string,
@@ -103,7 +103,7 @@ export const useQuizStore = defineStore('quiz', () => {
     let totalScore = 0;
     let totalTime = 0;
   
-    // 计算得分（正确答题时间越短，权重越高）
+    // Calculate score (shorter correct answer time, higher weight)
     answers.forEach(answer => {
       const question = quiz.questions.find(q => q.id === answer.questionId);
       if (question) {
@@ -111,16 +111,16 @@ export const useQuizStore = defineStore('quiz', () => {
         let isCorrect = false;
   
         if (question.type === 'single') {
-          // 单选题：检查是否选择了正确答案
+          // Single-choice question: check if correct answer is selected
           isCorrect = answer.selectedAnswers.length === 1 && question.correctAnswers.includes(answer.selectedAnswers[0]);
         } else {
-          // 多选题：检查是否选择了所有正确答案且没有选择错误答案
+          // Multiple-choice question: check if all correct answers are selected and no incorrect answers are selected
           isCorrect = question.correctAnswers.every(ca => answer.selectedAnswers.includes(ca)) &&
                      answer.selectedAnswers.every(sa => question.correctAnswers.includes(sa));
         }
   
         if (isCorrect) {
-          // 时间权重公式：基础分数 × (1 - 时间比例)，时间比例 = 用时/30秒（假设30秒为基准）
+          // Time weight formula: base score × (1 - time ratio), time ratio = time used / 30 seconds (assuming 30 seconds as benchmark)
           const timeRatio = Math.min(answer.timeTaken / 30, 1);
           const weightedScore = Math.round(question.points * (1 - timeRatio));
           totalScore += weightedScore;
@@ -143,7 +143,7 @@ export const useQuizStore = defineStore('quiz', () => {
     return submission;
   };
 
-  // 获取问卷排名（按分数降序，同分则按用时升序）
+  // Get quiz rankings (sorted by score descending, same score sorted by time used ascending)
   const getQuizRankings = (quizId: string) => {
     return submissions.value
       .filter(sub => sub.quizId === quizId)
@@ -159,16 +159,16 @@ export const useQuizStore = defineStore('quiz', () => {
       }));
   };
 
-  // 获取单个问卷
+  // Get single quiz
   const getQuizById = (quizId: string) => {
     return quizzes.value.find(q => q.id === quizId);
   };
 
-  // 获取用户创建的问卷（支持分页、搜索和排序）
+  // Get quizzes created by user (supports pagination, search and sorting)
   const getUserQuizzesWithFilters = (userId: string, page = 1, pageSize = 6, searchTerm = '', sortBy = 'createdAt') => {
     let filteredQuizzes = quizzes.value.filter(q => q.creatorId === userId);
 
-    // 搜索功能
+    // Search functionality
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filteredQuizzes = filteredQuizzes.filter(quiz => 
@@ -177,7 +177,7 @@ export const useQuizStore = defineStore('quiz', () => {
       );
     }
 
-    // 排序功能
+    // Sorting functionality
     filteredQuizzes.sort((a, b) => {
       if (sortBy === 'createdAt') {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -189,7 +189,7 @@ export const useQuizStore = defineStore('quiz', () => {
       return 0;
     });
 
-    // 分页功能
+    // Pagination functionality
     const startIndex = (page - 1) * pageSize;
     const paginatedQuizzes = filteredQuizzes.slice(startIndex, startIndex + pageSize);
 
@@ -200,29 +200,29 @@ export const useQuizStore = defineStore('quiz', () => {
     };
   };
 
-  // 生成测试问卷数据
+  // Generate test quiz data
   const generateTestQuizzes = async () => {
     // 动态导入authStore以避免循环依赖
     const { useAuthStore } = await import('./authStore');
     const authStore = useAuthStore();
     const creatorId = authStore.currentUser?.id || 'default-user-123';
     const titles = [
-      '数学基础知识测验', '世界历史事件问答', '自然科学常识测试',
-      '文学经典作品了解', '奥林匹克运动知识', '中国地理概况',
-      '古典音乐欣赏基础', '西方艺术史入门', '计算机基础概念', '英语常用词汇测试'
+      'Basic Mathematics Quiz', 'World Historical Events Quiz', 'Natural Science General Knowledge Test',
+      'Literary Classics Knowledge', 'Olympic Sports Knowledge', 'China Geography Overview',
+      'Classical Music Appreciation Basics', 'Introduction to Western Art History', 'Computer Basic Concepts', 'English Common Vocabulary Test'
     ];
 
     const descriptions = [
-      '涵盖代数、几何等基础数学知识',
-      '从古代到现代的重要历史事件',
-      '物理、化学、生物等基础科学知识',
-      '国内外经典文学作品及作者',
-      '奥运会项目及历史记录',
-      '中国各省区地理特征',
-      '古典音乐时期及作曲家作品',
-      '文艺复兴到现代艺术流派',
-      '计算机原理及基本操作',
-      '英语四级核心词汇测试'
+      'Covers basic mathematics knowledge such as algebra, geometry, etc.',
+      'Important historical events from ancient to modern times',
+      'Basic science knowledge including physics, chemistry, biology, etc.',
+      'Domestic and foreign classic literary works and authors',
+      'Olympic events and historical records',
+      'Geographical features of China\'s provinces and regions',
+      'Classical music periods and composers\' works',
+      'Art movements from Renaissance to modern times',
+      'Computer principles and basic operations',
+      'English CET-4 core vocabulary test'
     ];
 
     // 清空现有数据
@@ -235,10 +235,10 @@ export const useQuizStore = defineStore('quiz', () => {
       // 为每份问卷添加2-4个问题
       for (let j = 0; j < Math.floor(Math.random() * 3) + 2; j++) {
         addQuestion(quiz.id, {
-          text: `问题 ${j + 1}: 这是一份关于${titles[i]}的测试问题`,
+          text: `Question ${j + 1}: This is a test question about ${titles[i]}`,
           points: 10,
           type: 'single',
-          options: ['选项A', '选项B', '选项C', '选项D'],
+          options: ['Option A', 'Option B', 'Option C', 'Option D'],
           correctAnswers: [Math.floor(Math.random() * 4)]
         });
       }
@@ -255,7 +255,7 @@ export const useQuizStore = defineStore('quiz', () => {
           id: uuidv4(),
           quizId: quiz.id,
           userId: `user-${Math.floor(Math.random() * 1000)}`,
-          userName: `用户${k + 1}`,
+          userName: `User ${k + 1}`,
           score,
           timeTaken,
           submittedAt: date

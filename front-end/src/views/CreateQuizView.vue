@@ -1,6 +1,6 @@
 <template>
   <div class="w-full max-w-3xl mx-auto">
-    <!-- 通知提示 -->
+    <!-- Notification prompt -->
     <v-snackbar
       v-model="showNotification"
       :color="notificationType"
@@ -15,7 +15,7 @@
     </v-snackbar>
 
     <v-card elevation="8" rounded="2xl" class="mt-8">
-      <!-- 问卷头部 -->
+      <!-- Quiz header -->
       <v-card-title
         class="bg-gradient-to-r from-primary to-primary/90 text-white py-6 px-8"
       >
@@ -34,7 +34,7 @@
         </div>
       </v-card-title>
 
-      <!-- 表单内容 -->
+      <!-- Form content -->
       <v-card-text class="p-8">
         <v-form @submit.prevent="handleCreateQuiz">
           <v-text-field
@@ -248,10 +248,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/authStore";
-import { useQuizStore } from "../stores/quizStore";
+import { useMutation } from "@vue/apollo-composable";
+import { CREATE_QUIZ } from "../graphql/quizMutations";
 
 interface Question {
   id: string;
@@ -265,8 +266,10 @@ interface Question {
 const quizTitle = ref("");
 const quizDescription = ref("");
 const questions = reactive<Question[]>([]);
+const loading = ref(false);
+const errorMessage = ref("");
 
-// 通知相关
+// Notification related
 const showNotification = ref(false);
 const notificationMessage = ref("");
 const notificationType = ref("success");
@@ -280,14 +283,15 @@ const showSnackbar = (message: string, type: string = "success") => {
 
 const router = useRouter();
 const authStore = useAuthStore();
-const quizStore = useQuizStore();
 
-// 初始化时检查用户是否已登录
-if (!authStore.isAuthenticated) {
-  router.push("/login");
-}
+// Check if user is logged in on initialization
+onMounted(() => {
+  if (!authStore.isAuthenticated) {
+    router.push("/login");
+  }
+});
 
-// 添加新题目
+// Add new question
 const addQuestion = () => {
   questions.push({
     id: crypto.randomUUID(),
@@ -299,57 +303,136 @@ const addQuestion = () => {
   });
 };
 
-// 删除题目
+// Delete question
 const removeQuestion = (index: number) => {
   questions.splice(index, 1);
 };
 
-// 添加选项
+// Add option
 const addOption = (question: Question) => {
   question.options.push("");
 };
 
-// 删除选项
+// Delete option
 const removeOption = (question: Question, optIndex: number) => {
   question.options.splice(optIndex, 1);
-  // 如果删除的是当前正确答案之一，更新正确答案数组
+  // If the deleted option is one of the current correct answers, update the correct answers array
   question.correctAnswers = question.correctAnswers
     .filter((index) => index !== optIndex)
     .map((index) => (index > optIndex ? index - 1 : index));
-  // 如果没有正确答案了，自动设置第一个选项为正确答案
+  // If there are no correct answers left, automatically set the first option as the correct answer
   if (question.correctAnswers.length === 0) {
     question.correctAnswers.push(0);
   }
 };
 
-// 处理问卷发布
-const handleCreateQuiz = () => {
-  if (!authStore.currentUser) return;
+// Create quiz using GraphQL mutation
+const { mutate: createQuizMutation } = useMutation(CREATE_QUIZ);
 
-  // 创建问卷
-  const newQuiz = quizStore.createQuiz(
-    quizTitle.value,
-    quizDescription.value,
-    authStore.currentUser.id
-  );
-
-  // 添加所有题目
-  questions.forEach((question) => {
-    quizStore.addQuestion(newQuiz.id, {
-      text: question.text,
-      points: question.points,
-      type: "single", // 默认设置为单选题
-      options: question.options,
-      correctAnswers: question.correctAnswers,
-    });
-  });
-
-  // 生成分享链接
-  const shareUrl = `${window.location.origin}/quiz/${newQuiz.id}`;
-  showSnackbar(`Quiz created successfully! Share link: ${shareUrl}`);
-  router.push("/");
+// Parse error message
+const parseErrorMessage = (error: any): string => {
+  if (!error) return "";
+  
+  if (error.quizNotFound) return `Quiz not found: ID ${error.quizNotFound.value}`;
+  if (error.quizNotStarted) return `Quiz not started: ID ${error.quizNotStarted.value}`;
+  if (error.quizEnded) return `Quiz ended: ID ${error.quizEnded.value}`;
+  if (error.alreadySubmitted) return `${error.alreadySubmitted.user} has already submitted this quiz: ID ${error.alreadySubmitted.value}`;
+  if (error.unauthorized) return "Unauthorized access, please login first";
+  if (error.invalidInput) return `Invalid input parameters: ${error.invalidInput.value}`;
+  if (error.invalidAnswerFormat) return `Invalid answer format: ${error.invalidAnswerFormat.value}`;
+  if (error.invalidTimestampFormat) return `Invalid timestamp format: ${error.invalidTimestampFormat.value}`;
+  if (error.invalidTimeRange) return `Invalid time range: ${error.invalidTimeRange.value}`;
+  if (error.storageError) return `Storage operation failed: ${error.storageError.value}`;
+  if (error.other) return `Other error: ${error.other.value}`;
+  
+  return "Unknown error";
 };
 
-// 初始添加一个题目
+// Handle quiz publishing
+const handleCreateQuiz = async () => {
+  if (!authStore.currentUser) return;
+  
+  // Form validation
+  if (!quizTitle.value.trim()) {
+    showSnackbar("Please enter quiz title", "error");
+    return;
+  }
+  
+  if (questions.length === 0) {
+    showSnackbar("Please add at least one question", "error");
+    return;
+  }
+  
+  // Validate each question
+  for (const question of questions) {
+    if (!question.text.trim()) {
+      showSnackbar("Please fill in all question content", "error");
+      return;
+    }
+    
+    if (question.options.length < 2) {
+      showSnackbar("Each question needs at least two options", "error");
+      return;
+    }
+    
+    if (question.options.some(opt => !opt.trim())) {
+      showSnackbar("Please fill in all option content", "error");
+      return;
+    }
+    
+    if (question.correctAnswers.length === 0) {
+      showSnackbar("Please set correct answer for each question", "error");
+      return;
+    }
+  }
+  
+  try {
+    loading.value = true;
+    errorMessage.value = "";
+    
+    // Build submission parameters
+    const params = {
+      field0: {
+        title: quizTitle.value,
+        description: quizDescription.value,
+        questions: questions.map(q => ({
+          text: q.text,
+          points: q.points,
+          options: q.options,
+          correctAnswers: q.correctAnswers,
+        })),
+        startTime: Date.now(), // Start time now
+        endTime: Date.now() + 3600000, // End time after 1 hour
+      },
+    };
+    
+    // Call GraphQL API to create quiz
+    const result = await createQuizMutation(params);
+    if (!result) {
+      errorMessage.value = "Failed to create quiz, please try again later";
+      showSnackbar(errorMessage.value, "error");
+      return;
+    }
+    const createResult = result.data?.createQuiz;
+    
+    // Check for errors
+    if (createResult?.error) {
+      errorMessage.value = parseErrorMessage(createResult.error);
+      showSnackbar(errorMessage.value, "error");
+      return;
+    }
+    
+    // Creation successful
+    showSnackbar("Quiz created successfully!");
+    router.push("/");
+  } catch (err) {
+    console.error("Failed to create quiz:", err);
+    showSnackbar("Failed to create quiz, please try again later", "error");
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Add one question initially
 addQuestion();
 </script>

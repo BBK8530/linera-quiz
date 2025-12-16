@@ -15,14 +15,14 @@ export const useAuthStore = defineStore('auth', {
     isAuthenticated: false
   }),
   actions: {
-    // 模拟登录
+    // Mock login
     async login(username: string) {
-      // 模拟登录 API 调用
+      // Mock login API call
       try {
-        // 模拟网络延迟
+        // Mock network delay
         await new Promise(resolve => setTimeout(resolve, 800));
 
-        // 创建用户对象
+        // Create user object
         const newUser = {
           id: uuidv4(),
           username,
@@ -30,14 +30,14 @@ export const useAuthStore = defineStore('auth', {
           createdAt: new Date()
         };
 
-        // 更新状态
+        // Update state
         this.currentUser = newUser;
         this.isAuthenticated = true;
 
-        // 保存到本地存储
+        // Save to local storage
         localStorage.setItem('currentUser', JSON.stringify(newUser));
 
-        // 更新现有测试问卷的创建者ID
+        // Update creator ID of existing test quizzes
         const { useQuizStore } = await import('./quizStore');
         const quizStore = useQuizStore();
         if (quizStore.quizzes.length > 0) {
@@ -51,7 +51,7 @@ export const useAuthStore = defineStore('auth', {
           }
         }
 
-        // 登录后检查并生成测试数据
+        // Check and generate test data after login
         const userQuizzes = quizStore.getUserQuizzesWithFilters(newUser.id);
         if (userQuizzes.quizzes.length === 0) {
           await quizStore.generateTestQuizzes();
@@ -62,13 +62,13 @@ export const useAuthStore = defineStore('auth', {
         throw error;
       }
     },
-    // 登出
+    // Logout
     logout() {
       this.currentUser = null;
       this.isAuthenticated = false;
       localStorage.removeItem('currentUser');
     },
-    // 初始化时从localStorage加载用户
+    // Load user from localStorage on initialization
     initAuth() {
       const savedUser = localStorage.getItem('currentUser');
       if (savedUser) {

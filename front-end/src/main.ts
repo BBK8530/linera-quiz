@@ -15,13 +15,13 @@ app.use(pinia);
 app.use(router);
 app.use(vuetify);
 
-// 初始化数据存储
+// Initialize data storage
 const authStore = useAuthStore();
 authStore.initAuth();
 
-// 使用Apollo Provider包装应用
+// Wrap application with Apollo Provider
 app.use(GraphQLProvider);
 
 app.mount('#app');
 
-// 移除本地存储初始化，现在使用GraphQL
+// Removed local storage initialization, now using GraphQL

@@ -3,10 +3,39 @@
 
 /*! ABI of the Quiz Application */
 
-use async_graphql::{InputObject, SimpleObject};
+use async_graphql::{InputObject, SimpleObject, Enum};
 use linera_sdk::graphql::GraphQLMutationRoot;
 use linera_sdk::linera_base_types::{ContractAbi, ServiceAbi};
 use serde::{Deserialize, Serialize};
+
+/// 排序方向枚举
+#[derive(Debug, Serialize, Deserialize, Enum, Copy, Clone, Eq, PartialEq)]
+pub enum SortDirection {
+    /// 升序
+    #[graphql(name = "ASC")]
+    Asc,
+    /// 降序
+    #[graphql(name = "DESC")]
+    Desc,
+}
+
+/// 分页参数
+#[derive(Debug, Serialize, Deserialize, InputObject)]
+pub struct PaginationParams {
+    /// 每页数量
+    pub limit: Option<u32>,
+    /// 偏移量
+    pub offset: Option<u32>,
+}
+
+/// 排序参数
+#[derive(Debug, Serialize, Deserialize, InputObject)]
+pub struct SortParams {
+    /// 排序字段
+    pub sort_by: Option<String>,
+    /// 排序方向
+    pub sort_direction: Option<SortDirection>,
+}
 
 pub mod state;
 
@@ -92,7 +121,7 @@ pub enum Query {
 }
 
 /// 用户答题尝试视图
-#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+#[derive(Debug, Serialize, Deserialize, SimpleObject, Clone)]
 pub struct UserAttemptView {
     pub quiz_id: u64,
     pub user: String,
@@ -103,14 +132,14 @@ pub struct UserAttemptView {
 }
 
 /// 测验尝试记录
-#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+#[derive(Debug, Serialize, Deserialize, SimpleObject, Clone)]
 pub struct QuizAttempt {
     pub quiz_id: u64,
     pub attempt: UserAttemptView,
 }
 
 /// Quiz集合视图
-#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+#[derive(Debug, Serialize, Deserialize, SimpleObject, Clone)]
 pub struct QuizSetView {
     pub id: u64,
     pub title: String,
@@ -123,7 +152,7 @@ pub struct QuizSetView {
 }
 
 /// 问题视图
-#[derive(Debug, Serialize, Deserialize, SimpleObject)]
+#[derive(Debug, Serialize, Deserialize, SimpleObject, Clone)]
 pub struct QuestionView {
     pub id: String,
     pub text: String,

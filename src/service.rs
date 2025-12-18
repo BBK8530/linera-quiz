@@ -49,7 +49,13 @@ impl QueryRoot {
         }
     }
 
-    async fn quiz_sets(&self) -> Vec<QuizSetView> {
+    async fn quiz_sets(
+        &self,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        sort_by: Option<String>,
+        sort_direction: Option<quiz::SortDirection>,
+    ) -> Vec<QuizSetView> {
         let mut quiz_sets = Vec::new();
 
         let _ = self
@@ -82,10 +88,51 @@ impl QueryRoot {
             })
             .await;
 
-        quiz_sets
+        // 排序
+        if let Some(sort_by) = sort_by {
+            let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
+            match sort_by.as_str() {
+                "id" => quiz_sets.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.id.cmp(&b.id),
+                        quiz::SortDirection::Desc => b.id.cmp(&a.id),
+                    }
+                }),
+                "title" => quiz_sets.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.title.cmp(&b.title),
+                        quiz::SortDirection::Desc => b.title.cmp(&a.title),
+                    }
+                }),
+                "created_at" => quiz_sets.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
+                        quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
+                    }
+                }),
+                _ => {} // 默认不排序
+            }
+        }
+
+        // 分页
+        let start = offset.unwrap_or(0) as usize;
+        let end = if let Some(limit) = limit {
+            (start + limit as usize).min(quiz_sets.len())
+        } else {
+            quiz_sets.len()
+        };
+
+        quiz_sets[start..end].to_vec()
     }
 
-    async fn user_attempts(&self, user: String) -> Vec<QuizAttempt> {
+    async fn user_attempts(
+        &self,
+        user: String,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        sort_by: Option<String>,
+        sort_direction: Option<quiz::SortDirection>,
+    ) -> Vec<QuizAttempt> {
         let mut attempts = Vec::new();
 
         let _ = self
@@ -111,7 +158,47 @@ impl QueryRoot {
             })
             .await;
 
-        attempts
+        // 排序
+        if let Some(sort_by) = sort_by {
+            let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
+            match sort_by.as_str() {
+                "quiz_id" => attempts.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.quiz_id.cmp(&b.quiz_id),
+                        quiz::SortDirection::Desc => b.quiz_id.cmp(&a.quiz_id),
+                    }
+                }),
+                "score" => attempts.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.attempt.score.cmp(&b.attempt.score),
+                        quiz::SortDirection::Desc => b.attempt.score.cmp(&a.attempt.score),
+                    }
+                }),
+                "completed_at" => attempts.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.attempt.completed_at.cmp(&b.attempt.completed_at),
+                        quiz::SortDirection::Desc => b.attempt.completed_at.cmp(&a.attempt.completed_at),
+                    }
+                }),
+                "time_taken" => attempts.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.attempt.time_taken.cmp(&b.attempt.time_taken),
+                        quiz::SortDirection::Desc => b.attempt.time_taken.cmp(&a.attempt.time_taken),
+                    }
+                }),
+                _ => {} // 默认不排序
+            }
+        }
+
+        // 分页
+        let start = offset.unwrap_or(0) as usize;
+        let end = if let Some(limit) = limit {
+            (start + limit as usize).min(attempts.len())
+        } else {
+            attempts.len()
+        };
+
+        attempts[start..end].to_vec()
     }
 
     async fn leaderboard(&self) -> Vec<UserAttemptView> {
@@ -196,7 +283,14 @@ impl QueryRoot {
             Err(_) => Vec::default(),
         }
     }
-    async fn get_user_created_quizzes(&self, nickname: String) -> Vec<QuizSetView> {
+    async fn get_user_created_quizzes(
+        &self,
+        nickname: String,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        sort_by: Option<String>,
+        sort_direction: Option<quiz::SortDirection>,
+    ) -> Vec<QuizSetView> {
         let mut created_quizzes = Vec::new();
         let _ = self
             .state
@@ -228,10 +322,52 @@ impl QueryRoot {
                 Ok(())
             })
             .await;
-        created_quizzes
+
+        // 排序
+        if let Some(sort_by) = sort_by {
+            let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
+            match sort_by.as_str() {
+                "id" => created_quizzes.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.id.cmp(&b.id),
+                        quiz::SortDirection::Desc => b.id.cmp(&a.id),
+                    }
+                }),
+                "title" => created_quizzes.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.title.cmp(&b.title),
+                        quiz::SortDirection::Desc => b.title.cmp(&a.title),
+                    }
+                }),
+                "created_at" => created_quizzes.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
+                        quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
+                    }
+                }),
+                _ => {} // 默认不排序
+            }
+        }
+
+        // 分页
+        let start = offset.unwrap_or(0) as usize;
+        let end = if let Some(limit) = limit {
+            (start + limit as usize).min(created_quizzes.len())
+        } else {
+            created_quizzes.len()
+        };
+
+        created_quizzes[start..end].to_vec()
     }
 
-    async fn get_user_participated_quizzes(&self, nickname: String) -> Vec<QuizSetView> {
+    async fn get_user_participated_quizzes(
+        &self,
+        nickname: String,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        sort_by: Option<String>,
+        sort_direction: Option<quiz::SortDirection>,
+    ) -> Vec<QuizSetView> {
         let mut participated_quizzes = Vec::new();
         let quiz_ids = self
             .state
@@ -264,7 +400,42 @@ impl QueryRoot {
                 });
             }
         }
-        participated_quizzes
+
+        // 排序
+        if let Some(sort_by) = sort_by {
+            let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
+            match sort_by.as_str() {
+                "id" => participated_quizzes.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.id.cmp(&b.id),
+                        quiz::SortDirection::Desc => b.id.cmp(&a.id),
+                    }
+                }),
+                "title" => participated_quizzes.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.title.cmp(&b.title),
+                        quiz::SortDirection::Desc => b.title.cmp(&a.title),
+                    }
+                }),
+                "created_at" => participated_quizzes.sort_by(|a, b| {
+                    match direction {
+                        quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
+                        quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
+                    }
+                }),
+                _ => {} // 默认不排序
+            }
+        }
+
+        // 分页
+        let start = offset.unwrap_or(0) as usize;
+        let end = if let Some(limit) = limit {
+            (start + limit as usize).min(participated_quizzes.len())
+        } else {
+            participated_quizzes.len()
+        };
+
+        participated_quizzes[start..end].to_vec()
     }
 }
 

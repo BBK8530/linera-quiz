@@ -2,8 +2,8 @@ import { gql } from '@apollo/client';
 
 // 获取所有测验集合
 export const GET_ALL_QUIZ_SETS = gql`
-  query GetAllQuizSets {
-    quizSets {
+  query GetAllQuizSets($limit: Int, $offset: Int, $sortBy: String, $sortDirection: SortDirection) {
+    quizSets(limit: $limit, offset: $offset, sortBy: $sortBy, sortDirection: $sortDirection) {
       id
       title
       description
@@ -46,8 +46,8 @@ export const GET_QUIZ_SET = gql`
 
 // 获取用户测验尝试记录
 export const GET_USER_ATTEMPTS = gql`
-  query GetUserAttempts($user: String!) {
-    userAttempts(user: $user) {
+  query GetUserAttempts($user: String!, $limit: Int, $offset: Int, $sortBy: String, $sortDirection: SortDirection) {
+    userAttempts(user: $user, limit: $limit, offset: $offset, sortBy: $sortBy, sortDirection: $sortDirection) {
       quizId
       attempt {
         quizId
@@ -97,8 +97,8 @@ export const GET_USER_PROFILE = gql`
 
 // 获取用户创建的测验集合
 export const GET_USER_CREATED_QUIZZES = gql`
-  query GetUserCreatedQuizzes($nickname: String!) {
-    getUserCreatedQuizzes(nickname: $nickname) {
+  query GetUserCreatedQuizzes($nickname: String!, $limit: Int, $offset: Int, $sortBy: String, $sortDirection: SortDirection) {
+    getUserCreatedQuizzes(nickname: $nickname, limit: $limit, offset: $offset, sortBy: $sortBy, sortDirection: $sortDirection) {
       id
       title
       description
@@ -119,8 +119,8 @@ export const GET_USER_CREATED_QUIZZES = gql`
 
 // 获取用户参与的测验集合
 export const GET_USER_PARTICIPATED_QUIZZES = gql`
-  query GetUserParticipatedQuizzes($user: String!) {
-    userParticipatedQuizzes(user: $user) {
+  query GetUserParticipatedQuizzes($user: String!, $limit: Int, $offset: Int, $sortBy: String, $sortDirection: SortDirection) {
+    getUserParticipatedQuizzes(user: $user, limit: $limit, offset: $offset, sortBy: $sortBy, sortDirection: $sortDirection) {
       id
       title
       description

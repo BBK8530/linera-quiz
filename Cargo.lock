@@ -3311,6 +3311,7 @@ version = "0.1.0"
 dependencies = [
  "async-graphql",
  "futures",
+ "getrandom 0.2.16",
  "linera-sdk",
  "rand 0.8.5",
  "serde",

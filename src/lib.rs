@@ -159,6 +159,7 @@ pub struct QuestionView {
     pub options: Vec<String>,
     pub points: u32,
     #[serde(rename = "type")]
+    #[graphql(name = "type")]
     pub question_type: String,
 }
 

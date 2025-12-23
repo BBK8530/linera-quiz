@@ -26,7 +26,7 @@ This is a feature-rich quiz application built on the Linera SDK that enables cre
 
 ### Running with Docker
 
-Docker support is available   
+Docker support is available
 
 ```bash
 docker compose up --force-recreate
@@ -38,3 +38,4 @@ The application will be accessible at:
 - GraphQL API: http://localhost:8080/chains/[CHAIN_ID]/applications/[APP_ID]
 
 The application uses the Linera SDK for smart contract development and GraphQL for the API layer.
+http://128.140.73.28:8080/chains/e1f14a27f2b7e7ffa4c7ab45dab80b88d8cf18984f9c75c15644f7cdf408ddcb/applications/41aa5c82097979c4cb419d7ba5ad8e79bef96ad5d2017e3633e75a336d774b4a

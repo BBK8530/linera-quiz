@@ -142,6 +142,16 @@
                   </v-btn>
                 </div>
 
+                <div class="mb-4">
+                  <label class="text-subtitle-2 mb-2 d-block"
+                    >Question Type:</label
+                  >
+                  <v-radio-group v-model="question.questionType" row>
+                    <v-radio label="Single Choice" value="single"></v-radio>
+                    <v-radio label="Multiple Choice" value="multiple"></v-radio>
+                  </v-radio-group>
+                </div>
+
                 <v-row gap="4" class="mb-4">
                   <v-col cols="12" md="6">
                     <v-text-field
@@ -159,20 +169,32 @@
                 </v-row>
 
                 <div class="mb-4">
-                  <label class="text-subtitle-2 mb-2 d-block"
-                    >Correct Answer:</label
-                  >
+                  <label class="text-subtitle-2 mb-2 d-block">
+                    Correct Answer{{
+                      question.questionType === "multiple" ? "s" : ""
+                    }}:
+                  </label>
                   <div
                     v-for="(_, idx) in question.options"
                     :key="idx"
                     class="ml-2"
                   >
-                    <v-checkbox
-                      v-model="question.correctOptions"
-                      :value="idx"
-                      :label="`Option ${idx + 1}: ${question.options[idx]}`"
-                      color="primary"
-                    ></v-checkbox>
+                    <template v-if="question.questionType === 'single'">
+                      <v-radio
+                        v-model="question.correctOptions"
+                        :value="[idx]"
+                        :label="`Option ${idx + 1}: ${question.options[idx]}`"
+                        color="primary"
+                      ></v-radio>
+                    </template>
+                    <template v-else>
+                      <v-checkbox
+                        v-model="question.correctOptions"
+                        :value="idx"
+                        :label="`Option ${idx + 1}: ${question.options[idx]}`"
+                        color="primary"
+                      ></v-checkbox>
+                    </template>
                   </div>
                 </div>
 
@@ -237,6 +259,7 @@ interface Question {
   options: string[];
   points: number;
   correctOptions: number[];
+  questionType: string;
 }
 
 const title = ref("");
@@ -245,7 +268,13 @@ const startTime = ref("");
 const endTime = ref("");
 const timeLimit = ref(300); // Default 5 minutes
 const questions = ref<Question[]>([
-  { text: "", options: [""], points: 10, correctOptions: [] },
+  {
+    text: "",
+    options: [""],
+    points: 10,
+    correctOptions: [],
+    questionType: "single",
+  },
 ]);
 const router = useRouter();
 const userStore = useAuthStore();
@@ -262,6 +291,7 @@ const addQuestion = () => {
     options: [""],
     points: 10,
     correctOptions: [],
+    questionType: "single",
   });
 };
 
@@ -313,6 +343,8 @@ const handleSubmit = async () => {
       options: q.options,
       correctOptions: q.correctOptions,
       points: q.points,
+      questionType: q.questionType,
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Generate a unique ID for each question
     }));
 
     // Build parameters

@@ -3,10 +3,39 @@
 
 /*! ABI of the Quiz Application */
 
-use async_graphql::{InputObject, SimpleObject, Enum};
+use async_graphql::{Enum, InputObject, SimpleObject};
 use linera_sdk::graphql::GraphQLMutationRoot;
 use linera_sdk::linera_base_types::{ContractAbi, ServiceAbi};
 use serde::{Deserialize, Serialize};
+
+/// Quiz错误类型枚举
+#[derive(Debug, Serialize, Deserialize, Enum, Copy, Clone, PartialEq, Eq)]
+pub enum QuizError {
+    /// 昵称已被使用
+    NicknameAlreadyTaken,
+    /// 无效的Quiz模式
+    InvalidQuizMode,
+    /// 无效的开始模式
+    InvalidStartMode,
+    /// Quiz尚未开始
+    QuizNotStarted,
+    /// 用户已经尝试过该Quiz
+    UserAlreadyAttempted,
+    /// 用户未注册该Quiz
+    UserNotRegistered,
+    /// 用户已经注册该Quiz
+    UserAlreadyRegistered,
+    /// Quiz未找到
+    QuizNotFound,
+    /// 用户未找到
+    UserNotFound,
+    /// 权限不足
+    InsufficientPermissions,
+    /// 参数错误
+    InvalidParameters,
+    /// 内部错误
+    InternalError,
+}
 
 /// 排序方向枚举
 #[derive(Debug, Serialize, Deserialize, Enum, Copy, Clone, Eq, PartialEq)]
@@ -41,6 +70,12 @@ pub mod state;
 
 pub struct QuizAbi;
 
+/// 用户设置昵称的参数
+#[derive(Debug, Serialize, Deserialize, InputObject)]
+pub struct SetNicknameParams {
+    pub nickname: String,
+}
+
 /// 创建Quiz集合的参数
 #[derive(Debug, Serialize, Deserialize, InputObject)]
 pub struct CreateQuizParams {
@@ -50,7 +85,9 @@ pub struct CreateQuizParams {
     pub time_limit: u64,    // 秒
     pub start_time: String, // 毫秒时间戳字符串
     pub end_time: String,   // 毫秒时间戳字符串
-    pub nick_name: String,
+    pub nickname: String,
+    pub mode: String,       // "public" or "registration"
+    pub start_mode: String, // "auto" or "manual"
 }
 
 /// 问题参数
@@ -78,8 +115,26 @@ pub struct AnswerOption {
 pub struct SubmitAnswersParams {
     pub quiz_id: u64,
     pub answers: Vec<AnswerOption>, // 每个问题的答案选项索引列表，支持多选
-    pub time_taken: u64,        // 毫秒
-    pub nick_name: String,
+    pub time_taken: u64,            // 毫秒
+    pub nickname: String,
+}
+
+/// Quiz模式枚举
+#[derive(Debug, Serialize, Deserialize, Enum, Copy, Clone, Eq, PartialEq)]
+pub enum QuizMode {
+    #[graphql(name = "public")]
+    Public,
+    #[graphql(name = "registration")]
+    Registration,
+}
+
+/// Quiz开始方式枚举
+#[derive(Debug, Serialize, Deserialize, Enum, Copy, Clone, Eq, PartialEq)]
+pub enum QuizStartMode {
+    #[graphql(name = "auto")]
+    Auto,
+    #[graphql(name = "manual")]
+    Manual,
 }
 
 /// 排行榜条目
@@ -93,10 +148,16 @@ pub struct LeaderboardEntry {
 /// 应用支持的操作
 #[derive(Debug, Serialize, Deserialize, GraphQLMutationRoot)]
 pub enum Operation {
+    /// 用户设置昵称
+    SetNickname(SetNicknameParams),
     /// 创建新的Quiz集合
     CreateQuiz(CreateQuizParams),
     /// 提交Quiz答案
     SubmitAnswers(SubmitAnswersParams),
+    /// 开始Quiz（仅创建者可调用）
+    StartQuiz(u64),
+    /// 报名参与Quiz
+    RegisterForQuiz(u64),
 }
 
 /// 应用支持的查询
@@ -120,11 +181,20 @@ pub enum Query {
     GetUserParticipatedQuizzes(String),
 }
 
+/// 用户信息视图
+#[derive(Debug, Serialize, Deserialize, SimpleObject, Clone)]
+pub struct UserView {
+    pub wallet_address: String,
+    pub nickname: String,
+    pub created_at: String, // 微秒时间戳字符串
+}
+
 /// 用户答题尝试视图
 #[derive(Debug, Serialize, Deserialize, SimpleObject, Clone)]
 pub struct UserAttemptView {
     pub quiz_id: u64,
-    pub user: String,
+    pub user: String,     // 钱包地址
+    pub nickname: String, // 昵称
     pub answers: Vec<Vec<u32>>,
     pub score: u32,
     pub time_taken: u64,
@@ -144,11 +214,17 @@ pub struct QuizSetView {
     pub id: u64,
     pub title: String,
     pub description: String,
-    pub creator: String,
+    pub creator: String,          // 钱包地址
+    pub creator_nickname: String, // 昵称
     pub questions: Vec<QuestionView>,
-    pub start_time: String, // 微秒时间戳字符串
-    pub end_time: String,   // 微秒时间戳字符串
-    pub created_at: String, // 微秒时间戳字符串
+    pub start_time: String,            // 微秒时间戳字符串
+    pub end_time: String,              // 微秒时间戳字符串
+    pub created_at: String,            // 微秒时间戳字符串
+    pub mode: String,                  // "public" or "registration"
+    pub start_mode: String,            // "auto" or "manual"
+    pub is_started: bool,              // 是否已开始
+    pub registered_users: Vec<String>, // 报名用户列表
+    pub participant_count: u32,        // 参与人数统计
 }
 
 /// 问题视图
@@ -183,7 +259,7 @@ pub enum QueryResponse {
 
 impl ContractAbi for QuizAbi {
     type Operation = Operation;
-    type Response = ();
+    type Response = Result<(), QuizError>;
 }
 
 impl ServiceAbi for QuizAbi {

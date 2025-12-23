@@ -6,7 +6,7 @@ use linera_sdk::linera_base_types::WithServiceAbi;
 use linera_sdk::views::View;
 use linera_sdk::{Service, ServiceRuntime};
 use quiz::state::QuizState;
-use quiz::{Operation, QuestionView, QuizAttempt, QuizSetView, UserAttemptView};
+use quiz::{Operation, QuestionView, QuizAttempt, QuizSetView, UserAttemptView, UserView};
 use std::sync::Arc;
 
 linera_sdk::service!(QuizService);
@@ -25,25 +25,41 @@ struct QueryRoot {
 impl QueryRoot {
     async fn quiz_set(&self, quiz_id: u64) -> Option<QuizSetView> {
         match self.state.quiz_sets.get(&quiz_id).await {
-            Ok(option) => option.map(|quiz| QuizSetView {
-                id: quiz.id,
-                title: quiz.title.clone(),
-                description: quiz.description.clone(),
-                creator: quiz.creator,
-                questions: quiz
-                    .questions
-                    .iter()
-                    .map(|q| QuestionView {
-                        id: q.id.clone(),
-                        text: q.text.clone(),
-                        options: q.options.clone(),
-                        points: q.points,
-                        question_type: q.question_type.clone(),
-                    })
-                    .collect(),
-                start_time: quiz.start_time.micros().to_string(),
-                end_time: quiz.end_time.micros().to_string(),
-                created_at: quiz.created_at.micros().to_string(),
+            Ok(option) => option.map(|quiz| {
+                let mode_str = match quiz.mode {
+                    quiz::state::QuizMode::Public => "public",
+                    quiz::state::QuizMode::Registration => "registration",
+                };
+                let start_mode_str = match quiz.start_mode {
+                    quiz::state::QuizStartMode::Auto => "auto",
+                    quiz::state::QuizStartMode::Manual => "manual",
+                };
+                QuizSetView {
+                    id: quiz.id,
+                    title: quiz.title.clone(),
+                    description: quiz.description.clone(),
+                    creator: quiz.creator,
+                    creator_nickname: quiz.creator_nickname.clone(),
+                    questions: quiz
+                        .questions
+                        .iter()
+                        .map(|q| QuestionView {
+                            id: q.id.clone(),
+                            text: q.text.clone(),
+                            options: q.options.clone(),
+                            points: q.points,
+                            question_type: q.question_type.clone(),
+                        })
+                        .collect(),
+                    start_time: quiz.start_time.micros().to_string(),
+                    end_time: quiz.end_time.micros().to_string(),
+                    created_at: quiz.created_at.micros().to_string(),
+                    mode: mode_str.to_string(),
+                    start_mode: start_mode_str.to_string(),
+                    is_started: quiz.is_started,
+                    registered_users: quiz.registered_users.clone(),
+                    participant_count: quiz.participant_count,
+                }
             }),
             Err(_) => None,
         }
@@ -63,11 +79,20 @@ impl QueryRoot {
             .quiz_sets
             .for_each_index_value(|_key, quiz| {
                 let quiz = quiz.into_owned();
+                let mode_str = match quiz.mode {
+                    quiz::state::QuizMode::Public => "public",
+                    quiz::state::QuizMode::Registration => "registration",
+                };
+                let start_mode_str = match quiz.start_mode {
+                    quiz::state::QuizStartMode::Auto => "auto",
+                    quiz::state::QuizStartMode::Manual => "manual",
+                };
                 let quiz_view = QuizSetView {
                     id: quiz.id,
                     title: quiz.title.clone(),
                     description: quiz.description.clone(),
                     creator: quiz.creator,
+                    creator_nickname: quiz.creator_nickname.clone(),
                     questions: quiz
                         .questions
                         .iter()
@@ -82,6 +107,11 @@ impl QueryRoot {
                     start_time: quiz.start_time.micros().to_string(),
                     end_time: quiz.end_time.micros().to_string(),
                     created_at: quiz.created_at.micros().to_string(),
+                    mode: mode_str.to_string(),
+                    start_mode: start_mode_str.to_string(),
+                    is_started: quiz.is_started,
+                    registered_users: quiz.registered_users.clone(),
+                    participant_count: quiz.participant_count,
                 };
                 quiz_sets.push(quiz_view);
                 Ok(())
@@ -92,23 +122,17 @@ impl QueryRoot {
         if let Some(sort_by) = sort_by {
             let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
             match sort_by.as_str() {
-                "id" => quiz_sets.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.id.cmp(&b.id),
-                        quiz::SortDirection::Desc => b.id.cmp(&a.id),
-                    }
+                "id" => quiz_sets.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.id.cmp(&b.id),
+                    quiz::SortDirection::Desc => b.id.cmp(&a.id),
                 }),
-                "title" => quiz_sets.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.title.cmp(&b.title),
-                        quiz::SortDirection::Desc => b.title.cmp(&a.title),
-                    }
+                "title" => quiz_sets.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.title.cmp(&b.title),
+                    quiz::SortDirection::Desc => b.title.cmp(&a.title),
                 }),
-                "created_at" => quiz_sets.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
-                        quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
-                    }
+                "created_at" => quiz_sets.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
+                    quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
                 }),
                 _ => {} // 默认不排序
             }
@@ -144,6 +168,7 @@ impl QueryRoot {
                     let attempt_view = UserAttemptView {
                         quiz_id: attempt.quiz_id,
                         user: attempt.user,
+                        nickname: "".to_string(), // 暂时使用空字符串，后续需要从用户信息中获取
                         answers: attempt.answers,
                         score: attempt.score,
                         time_taken: attempt.time_taken,
@@ -162,29 +187,23 @@ impl QueryRoot {
         if let Some(sort_by) = sort_by {
             let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
             match sort_by.as_str() {
-                "quiz_id" => attempts.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.quiz_id.cmp(&b.quiz_id),
-                        quiz::SortDirection::Desc => b.quiz_id.cmp(&a.quiz_id),
+                "quiz_id" => attempts.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.quiz_id.cmp(&b.quiz_id),
+                    quiz::SortDirection::Desc => b.quiz_id.cmp(&a.quiz_id),
+                }),
+                "score" => attempts.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.attempt.score.cmp(&b.attempt.score),
+                    quiz::SortDirection::Desc => b.attempt.score.cmp(&a.attempt.score),
+                }),
+                "completed_at" => attempts.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.attempt.completed_at.cmp(&b.attempt.completed_at),
+                    quiz::SortDirection::Desc => {
+                        b.attempt.completed_at.cmp(&a.attempt.completed_at)
                     }
                 }),
-                "score" => attempts.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.attempt.score.cmp(&b.attempt.score),
-                        quiz::SortDirection::Desc => b.attempt.score.cmp(&a.attempt.score),
-                    }
-                }),
-                "completed_at" => attempts.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.attempt.completed_at.cmp(&b.attempt.completed_at),
-                        quiz::SortDirection::Desc => b.attempt.completed_at.cmp(&a.attempt.completed_at),
-                    }
-                }),
-                "time_taken" => attempts.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.attempt.time_taken.cmp(&b.attempt.time_taken),
-                        quiz::SortDirection::Desc => b.attempt.time_taken.cmp(&a.attempt.time_taken),
-                    }
+                "time_taken" => attempts.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.attempt.time_taken.cmp(&b.attempt.time_taken),
+                    quiz::SortDirection::Desc => b.attempt.time_taken.cmp(&a.attempt.time_taken),
                 }),
                 _ => {} // 默认不排序
             }
@@ -227,6 +246,7 @@ impl QueryRoot {
             .map(|(user, (score, time_taken))| UserAttemptView {
                 quiz_id: 0,
                 user,
+                nickname: "".to_string(), // 暂时使用空字符串，后续需要从用户信息中获取
                 answers: Vec::new(),
                 score,
                 time_taken,
@@ -265,6 +285,7 @@ impl QueryRoot {
                 |(user, (score, time_taken, completed_at))| UserAttemptView {
                     quiz_id,
                     user,
+                    nickname: "".to_string(), // 暂时使用空字符串，后续需要从用户信息中获取
                     answers: Vec::new(),
                     score,
                     time_taken,
@@ -283,6 +304,55 @@ impl QueryRoot {
             Err(_) => Vec::default(),
         }
     }
+
+    // 用户相关查询
+    async fn user(&self, wallet_address: String) -> Option<UserView> {
+        match self.state.users.get(&wallet_address).await {
+            Ok(option) => option.map(|user| UserView {
+                wallet_address: user.wallet_address.clone(),
+                nickname: user.nickname.clone(),
+                created_at: user.created_at.micros().to_string(),
+            }),
+            Err(_) => None,
+        }
+    }
+
+    async fn user_by_nickname(&self, nickname: String) -> Option<UserView> {
+        // 首先通过nickname_to_wallet映射获取钱包地址
+        match self.state.nickname_to_wallet.get(&nickname).await {
+            Ok(Some(wallet_address)) => {
+                // 然后通过钱包地址获取用户信息
+                match self.state.users.get(&wallet_address).await {
+                    Ok(option) => option.map(|user| UserView {
+                        wallet_address: user.wallet_address.clone(),
+                        nickname: user.nickname.clone(),
+                        created_at: user.created_at.micros().to_string(),
+                    }),
+                    Err(_) => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    async fn get_quiz_participants(&self, quiz_id: u64) -> Vec<String> {
+        match self.state.quiz_participants.get(&quiz_id).await {
+            Ok(Some(participants)) => participants,
+            _ => Vec::default(),
+        }
+    }
+
+    async fn is_user_participated(&self, quiz_id: u64, wallet_address: String) -> bool {
+        match self
+            .state
+            .user_attempts
+            .get(&(quiz_id, wallet_address))
+            .await
+        {
+            Ok(option) => option.is_some(),
+            _ => false,
+        }
+    }
     async fn get_user_created_quizzes(
         &self,
         nickname: String,
@@ -297,12 +367,21 @@ impl QueryRoot {
             .quiz_sets
             .for_each_index_value(|_key, quiz| {
                 let quiz = quiz.into_owned();
-                if quiz.creator == nickname {
+                if quiz.creator_nickname == nickname {
+                    let mode_str = match quiz.mode {
+                        quiz::state::QuizMode::Public => "public",
+                        quiz::state::QuizMode::Registration => "registration",
+                    };
+                    let start_mode_str = match quiz.start_mode {
+                        quiz::state::QuizStartMode::Auto => "auto",
+                        quiz::state::QuizStartMode::Manual => "manual",
+                    };
                     created_quizzes.push(QuizSetView {
                         id: quiz.id,
                         title: quiz.title.clone(),
                         description: quiz.description.clone(),
                         creator: quiz.creator,
+                        creator_nickname: quiz.creator_nickname.clone(),
                         questions: quiz
                             .questions
                             .iter()
@@ -317,6 +396,11 @@ impl QueryRoot {
                         start_time: quiz.start_time.micros().to_string(),
                         end_time: quiz.end_time.micros().to_string(),
                         created_at: quiz.created_at.micros().to_string(),
+                        mode: mode_str.to_string(),
+                        start_mode: start_mode_str.to_string(),
+                        is_started: quiz.is_started,
+                        registered_users: quiz.registered_users.clone(),
+                        participant_count: quiz.participant_count,
                     });
                 }
                 Ok(())
@@ -327,23 +411,17 @@ impl QueryRoot {
         if let Some(sort_by) = sort_by {
             let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
             match sort_by.as_str() {
-                "id" => created_quizzes.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.id.cmp(&b.id),
-                        quiz::SortDirection::Desc => b.id.cmp(&a.id),
-                    }
+                "id" => created_quizzes.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.id.cmp(&b.id),
+                    quiz::SortDirection::Desc => b.id.cmp(&a.id),
                 }),
-                "title" => created_quizzes.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.title.cmp(&b.title),
-                        quiz::SortDirection::Desc => b.title.cmp(&a.title),
-                    }
+                "title" => created_quizzes.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.title.cmp(&b.title),
+                    quiz::SortDirection::Desc => b.title.cmp(&a.title),
                 }),
-                "created_at" => created_quizzes.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
-                        quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
-                    }
+                "created_at" => created_quizzes.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
+                    quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
                 }),
                 _ => {} // 默认不排序
             }
@@ -362,7 +440,7 @@ impl QueryRoot {
 
     async fn get_user_participated_quizzes(
         &self,
-        nickname: String,
+        wallet_address: String,
         limit: Option<u32>,
         offset: Option<u32>,
         sort_by: Option<String>,
@@ -372,17 +450,26 @@ impl QueryRoot {
         let quiz_ids = self
             .state
             .user_participations
-            .get(&nickname)
+            .get(&wallet_address)
             .await
             .unwrap()
             .unwrap_or_default();
         for &quiz_id in &quiz_ids {
             if let Some(quiz_set) = self.state.quiz_sets.get(&quiz_id).await.unwrap() {
+                let mode_str = match quiz_set.mode {
+                    quiz::state::QuizMode::Public => "public",
+                    quiz::state::QuizMode::Registration => "registration",
+                };
+                let start_mode_str = match quiz_set.start_mode {
+                    quiz::state::QuizStartMode::Auto => "auto",
+                    quiz::state::QuizStartMode::Manual => "manual",
+                };
                 participated_quizzes.push(QuizSetView {
                     id: quiz_set.id,
                     title: quiz_set.title.clone(),
                     description: quiz_set.description.clone(),
                     creator: quiz_set.creator.clone(),
+                    creator_nickname: quiz_set.creator_nickname.clone(),
                     questions: quiz_set
                         .questions
                         .iter()
@@ -397,6 +484,11 @@ impl QueryRoot {
                     start_time: quiz_set.start_time.micros().to_string(),
                     end_time: quiz_set.end_time.micros().to_string(),
                     created_at: quiz_set.created_at.micros().to_string(),
+                    mode: mode_str.to_string(),
+                    start_mode: start_mode_str.to_string(),
+                    is_started: quiz_set.is_started,
+                    registered_users: quiz_set.registered_users.clone(),
+                    participant_count: quiz_set.participant_count,
                 });
             }
         }
@@ -405,23 +497,17 @@ impl QueryRoot {
         if let Some(sort_by) = sort_by {
             let direction = sort_direction.unwrap_or(quiz::SortDirection::Asc);
             match sort_by.as_str() {
-                "id" => participated_quizzes.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.id.cmp(&b.id),
-                        quiz::SortDirection::Desc => b.id.cmp(&a.id),
-                    }
+                "id" => participated_quizzes.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.id.cmp(&b.id),
+                    quiz::SortDirection::Desc => b.id.cmp(&a.id),
                 }),
-                "title" => participated_quizzes.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.title.cmp(&b.title),
-                        quiz::SortDirection::Desc => b.title.cmp(&a.title),
-                    }
+                "title" => participated_quizzes.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.title.cmp(&b.title),
+                    quiz::SortDirection::Desc => b.title.cmp(&a.title),
                 }),
-                "created_at" => participated_quizzes.sort_by(|a, b| {
-                    match direction {
-                        quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
-                        quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
-                    }
+                "created_at" => participated_quizzes.sort_by(|a, b| match direction {
+                    quiz::SortDirection::Asc => a.created_at.cmp(&b.created_at),
+                    quiz::SortDirection::Desc => b.created_at.cmp(&a.created_at),
                 }),
                 _ => {} // 默认不排序
             }

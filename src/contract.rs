@@ -12,9 +12,8 @@ use linera_sdk::{
     Contract, ContractRuntime,
 };
 
-use crate::state::{Question, QuizSet, QuizState, UserAttempt};
-use quiz::{CreateQuizParams, LeaderboardEntry, Operation, SubmitAnswersParams};
-
+use crate::state::{Question, QuizMode, QuizSet, QuizStartMode, QuizState, User, UserAttempt};
+use quiz::{CreateQuizParams, LeaderboardEntry, Operation, SetNicknameParams, SubmitAnswersParams};
 
 pub struct QuizContract {
     state: QuizState,
@@ -50,12 +49,11 @@ impl Contract for QuizContract {
 
     async fn execute_operation(&mut self, operation: Operation) -> Self::Response {
         match operation {
-            Operation::CreateQuiz(params) => {
-                self.create_quiz(params).await;
-            }
-            Operation::SubmitAnswers(params) => {
-                self.submit_answers(params).await;
-            }
+            Operation::SetNickname(params) => self.set_nickname(params).await,
+            Operation::CreateQuiz(params) => self.create_quiz(params).await,
+            Operation::SubmitAnswers(params) => self.submit_answers(params).await,
+            Operation::StartQuiz(quiz_id) => self.start_quiz(quiz_id).await,
+            Operation::RegisterForQuiz(quiz_id) => self.register_for_quiz(quiz_id).await,
         }
     }
 
@@ -69,128 +67,292 @@ impl Contract for QuizContract {
 }
 
 impl QuizContract {
-    async fn create_quiz(&mut self, params: CreateQuizParams) {
+    async fn set_nickname(&mut self, params: SetNicknameParams) -> Result<(), quiz::QuizError> {
         let current_time = self.runtime.system_time();
+        let wallet_address = self
+            .runtime
+            .authenticated_signer()
+            .ok_or(quiz::QuizError::InsufficientPermissions)?
+            .to_string();
+
+        // 检查昵称是否已被使用
+        if self
+            .state
+            .nickname_to_wallet
+            .get(&params.nickname)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .is_some()
+        {
+            return Err(quiz::QuizError::NicknameAlreadyTaken);
+        }
+
+        // 检查用户是否已存在
+        if let Some(existing_user) = self
+            .state
+            .users
+            .get(&wallet_address)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+        {
+            // 更新昵称
+            // 先删除旧昵称的映射
+            self.state
+                .nickname_to_wallet
+                .remove(&existing_user.nickname)
+                .map_err(|_| quiz::QuizError::InternalError)?;
+        }
+
+        // 创建或更新用户
+        let user = User {
+            wallet_address: wallet_address.clone(),
+            nickname: params.nickname.clone(),
+            created_at: current_time,
+        };
+
+        // 存储用户信息
+        self.state
+            .users
+            .insert(&wallet_address, user)
+            .map_err(|_| quiz::QuizError::InternalError)?;
+        // 建立昵称到钱包地址的映射
+        self.state
+            .nickname_to_wallet
+            .insert(&params.nickname, wallet_address)
+            .map_err(|_| quiz::QuizError::InternalError)?;
+        Ok(())
+    }
+
+    async fn create_quiz(&mut self, params: CreateQuizParams) -> Result<(), quiz::QuizError> {
+        let current_time = self.runtime.system_time();
+        let wallet_address = self
+            .runtime
+            .authenticated_signer()
+            .ok_or(quiz::QuizError::InsufficientPermissions)?
+            .to_string();
+
+        // 验证用户是否存在
+        let user = self
+            .state
+            .users
+            .get(&wallet_address)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .ok_or(quiz::QuizError::UserNotFound)?;
 
         // 验证测验时间范围
         let start_time_millis = params
             .start_time
             .parse::<u64>()
-            .expect("Invalid start time format");
+            .map_err(|_| quiz::QuizError::InvalidParameters)?;
 
         // 检查时间戳长度是否合理（毫秒级时间戳应该是13位左右）
-        assert!(
-            start_time_millis.to_string().len() >= 10 && start_time_millis.to_string().len() <= 14,
-            "Start time seems invalid (should be a millisecond timestamp)"
-        );
+        if !(start_time_millis.to_string().len() >= 10 && start_time_millis.to_string().len() <= 14)
+        {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
 
         let start_time: linera_sdk::linera_base_types::Timestamp = start_time_millis
             .checked_mul(1000)
-            .expect("Start time overflow when converting to microseconds")
+            .ok_or(quiz::QuizError::InvalidParameters)?
             .into(); // 毫秒转微秒
 
         let end_time_millis = params
             .end_time
             .parse::<u64>()
-            .expect("Invalid end time format");
+            .map_err(|_| quiz::QuizError::InvalidParameters)?;
 
         // 检查时间戳长度是否合理（毫秒级时间戳应该是13位左右）
-        assert!(
-            end_time_millis.to_string().len() >= 10 && end_time_millis.to_string().len() <= 14,
-            "End time seems invalid (should be a millisecond timestamp)"
-        );
+        if !(end_time_millis.to_string().len() >= 10 && end_time_millis.to_string().len() <= 14) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
 
         let end_time: linera_sdk::linera_base_types::Timestamp = end_time_millis
             .checked_mul(1000)
-            .expect("End time overflow when converting to microseconds")
+            .ok_or(quiz::QuizError::InvalidParameters)?
             .into(); // 毫秒转微秒
 
-        assert!(
-            start_time > current_time,
-            "Start time must be in the future"
-        );
-        assert!(end_time > start_time, "End time must be after start time");
+        if !(start_time > current_time) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+        if !(end_time > start_time) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
         // 检查时间范围是否合理（不超过100年）
-        assert!(
-            end_time.delta_since(start_time) <= TimeDelta::from_secs(3600 * 24 * 365 * 100),
-            "Time range is too long (maximum 100 years)"
-        );
+        if !(end_time.delta_since(start_time) <= TimeDelta::from_secs(3600 * 24 * 365 * 100)) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+
+        // 解析Quiz模式
+        let mode = match params.mode.as_str() {
+            "public" => QuizMode::Public,
+            "registration" => QuizMode::Registration,
+            _ => return Err(quiz::QuizError::InvalidQuizMode),
+        };
+
+        // 解析Quiz开始方式
+        let start_mode = match params.start_mode.as_str() {
+            "auto" => QuizStartMode::Auto,
+            "manual" => QuizStartMode::Manual,
+            _ => return Err(quiz::QuizError::InvalidStartMode),
+        };
 
         let quiz_id = *self.state.next_quiz_id.get();
-        let _creator_owner = self
-            .runtime
-            .authenticated_signer()
-            .expect("Failed to get authenticated signer: no user authenticated");
-        let creator = params.nick_name.clone();
+
+        // 生成题目ID和选项ID
+        let questions = params
+            .questions
+            .into_iter()
+            .enumerate()
+            .map(|(index, q)| {
+                // 使用测验ID和题目索引生成唯一ID
+                let id = format!("q{}-{}", quiz_id, index);
+
+                // 根据正确答案的个数设置type
+                let question_type = if q.correct_options.len() > 1 {
+                    "checkbox"
+                } else {
+                    "radio"
+                };
+
+                Question {
+                    id,
+                    text: q.text,
+                    options: q.options,
+                    correct_options: q.correct_options,
+                    points: q.points,
+                    question_type: question_type.to_string(),
+                }
+            })
+            .collect();
 
         let quiz_set = QuizSet {
             id: quiz_id,
             title: params.title,
             description: params.description,
-            creator,
-            questions: params
-                .questions
-                .into_iter()
-                .enumerate()
-                .map(|(index, q)| {
-                    // 使用测验ID和题目索引生成唯一ID
-                    let id = format!("q{}-{}", quiz_id, index);
-                    
-                    // 根据正确答案的个数设置type
-                    let question_type = if q.correct_options.len() > 1 { "checkbox" } else { "radio" };
-                    
-                    Question {
-                        id,
-                        text: q.text,
-                        options: q.options,
-                        correct_options: q.correct_options,
-                        points: q.points,
-                        question_type: question_type.to_string(),
-                    }
-                })
-                .collect(),
+            creator: wallet_address.clone(),
+            creator_nickname: user.nickname.clone(),
+            questions,
             time_limit: params.time_limit,
             start_time,
             end_time,
             created_at: current_time,
+            mode,
+            start_mode,
+            is_started: false,
+            registered_users: Vec::new(),
+            participant_count: 0,
         };
 
         // 存储新Quiz
-        let _ = self.state.quiz_sets.insert(&quiz_id, quiz_set);
+        self.state
+            .quiz_sets
+            .insert(&quiz_id, quiz_set)
+            .map_err(|_| quiz::QuizError::InternalError)?;
+
+        // 更新用户创建的测验列表
+        let mut created_quizzes = self
+            .state
+            .user_created_quizzes
+            .get(&wallet_address)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .unwrap_or_default();
+        created_quizzes.push(quiz_id);
+        self.state
+            .user_created_quizzes
+            .insert(&wallet_address, created_quizzes)
+            .map_err(|_| quiz::QuizError::InternalError)?;
+
         // 更新下一个Quiz ID
-        let next_id = quiz_id.checked_add(1).expect("Quiz ID overflow");
+        let next_id = quiz_id
+            .checked_add(1)
+            .ok_or(quiz::QuizError::InternalError)?;
         self.state.next_quiz_id.set(next_id);
+        Ok(())
     }
 
-    async fn submit_answers(&mut self, params: SubmitAnswersParams) {
-        let user = params.nick_name.clone();
-
-        let quiz_id = params.quiz_id;
+    async fn submit_answers(&mut self, params: SubmitAnswersParams) -> Result<(), quiz::QuizError> {
+        let wallet_address = self
+            .runtime
+            .authenticated_signer()
+            .ok_or(quiz::QuizError::InsufficientPermissions)?
+            .to_string();
         let now = self.runtime.system_time();
 
         // 检查Quiz是否存在
-        let quiz_set = self
+        let mut quiz_set = self
             .state
             .quiz_sets
-            .get(&quiz_id)
+            .get(&params.quiz_id)
             .await
-            .expect("Failed to retrieve quiz from storage")
-            .expect("QuizSet not found");
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .ok_or(quiz::QuizError::QuizNotFound)?;
 
-        // 检查测验时间范围
-        assert!(now >= quiz_set.start_time, "Quiz has not started yet");
-        assert!(now <= quiz_set.end_time, "Quiz has ended");
+        // 检查测验是否已开始
+        if !quiz_set.is_started {
+            // 如果是自动开始模式，检查是否到了开始时间
+            if quiz_set.start_mode == QuizStartMode::Auto && now >= quiz_set.start_time {
+                // 自动开始测验
+                quiz_set.is_started = true;
+                self.state
+                    .quiz_sets
+                    .insert(&params.quiz_id, quiz_set.clone())
+                    .map_err(|_| quiz::QuizError::InternalError)?;
+            } else {
+                return Err(quiz::QuizError::QuizNotStarted);
+            }
+        }
+
+        // 检查测验是否已结束
+        if !(now <= quiz_set.end_time) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
 
         // 检查用户是否已提交过该Quiz
         if self
             .state
             .user_attempts
-            .get(&(quiz_id, user.clone()))
+            .get(&(params.quiz_id, wallet_address.clone()))
             .await
-            .unwrap()
+            .map_err(|_| quiz::QuizError::InternalError)?
             .is_some()
         {
-            panic!("User has already attempted this quiz");
+            return Err(quiz::QuizError::UserAlreadyAttempted);
+        }
+
+        // 检查用户是否有权限参与
+        match quiz_set.mode {
+            QuizMode::Public => {
+                // 公开模式，检查用户是否设置了昵称
+                let user = self
+                    .state
+                    .users
+                    .get(&wallet_address)
+                    .await
+                    .map_err(|_| quiz::QuizError::InternalError)?
+                    .ok_or(quiz::QuizError::UserNotFound)?;
+                if user.nickname != params.nickname {
+                    return Err(quiz::QuizError::InvalidParameters);
+                }
+            }
+            QuizMode::Registration => {
+                // 报名模式，检查用户是否已报名
+                let user = self
+                    .state
+                    .users
+                    .get(&wallet_address)
+                    .await
+                    .map_err(|_| quiz::QuizError::InternalError)?
+                    .ok_or(quiz::QuizError::UserNotFound)?;
+                if user.nickname != params.nickname {
+                    return Err(quiz::QuizError::InvalidParameters);
+                }
+
+                if !quiz_set.registered_users.contains(&wallet_address) {
+                    return Err(quiz::QuizError::UserNotRegistered);
+                }
+            }
         }
 
         // 创建题目ID到题目的映射，用于快速查找
@@ -200,31 +362,30 @@ impl QuizContract {
         }
 
         // 验证答案数量是否匹配问题数量
-        assert_eq!(
-            params.answers.len(),
-            quiz_set.questions.len(),
-            "Answer count mismatch with questions"
-        );
+        if params.answers.len() != quiz_set.questions.len() {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
 
         // 计算得分
         let mut score = 0;
         let mut answers_by_index = vec![vec![]; quiz_set.questions.len()];
-        
+
         for answer_option in &params.answers {
             // 查找对应的题目
             let question = question_map
                 .get(&answer_option.question_id)
-                .expect(&format!("Question not found: {}", answer_option.question_id));
-            
+                .ok_or(quiz::QuizError::InvalidParameters)?;
+
             // 查找题目在原数组中的索引，用于保持原有存储结构
-            let question_index = quiz_set.questions
+            let question_index = quiz_set
+                .questions
                 .iter()
                 .position(|q| q.id == answer_option.question_id)
-                .expect(&format!("Question index not found: {}", answer_option.question_id));
-            
+                .ok_or(quiz::QuizError::InvalidParameters)?;
+
             // 存储答案到对应索引位置
             answers_by_index[question_index] = answer_option.selected_answers.clone();
-            
+
             // 检查用户选择的答案是否与所有正确选项完全匹配（顺序无关）
             let mut user_answers_sorted = answer_option.selected_answers.clone();
             user_answers_sorted.sort();
@@ -238,8 +399,9 @@ impl QuizContract {
 
         // 创建答题记录
         let attempt = UserAttempt {
-            quiz_id,
-            user: user.clone(),
+            quiz_id: params.quiz_id,
+            user: wallet_address.clone(),
+            nickname: params.nickname.clone(),
             answers: answers_by_index,
             score,
             time_taken: params.time_taken,
@@ -247,29 +409,164 @@ impl QuizContract {
         };
 
         // 存储答题记录
-        let _ = self
-            .state
+        self.state
             .user_attempts
-            .insert(&(quiz_id, user.clone()), attempt.clone());
+            .insert(&(params.quiz_id, wallet_address.clone()), attempt.clone())
+            .map_err(|_| quiz::QuizError::InternalError)?;
         // 记录答题事件
         self.state.quiz_events.push(attempt);
+
+        // 更新测验参与者列表
+        let mut participants = self
+            .state
+            .quiz_participants
+            .get(&params.quiz_id)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .unwrap_or_default();
+        if !participants.contains(&wallet_address) {
+            participants.push(wallet_address.clone());
+            self.state
+                .quiz_participants
+                .insert(&params.quiz_id, participants)
+                .map_err(|_| quiz::QuizError::InternalError)?;
+        }
+
+        // 更新测验参与者计数
+        quiz_set.participant_count += 1;
+        self.state
+            .quiz_sets
+            .insert(&params.quiz_id, quiz_set)
+            .map_err(|_| quiz::QuizError::InternalError)?;
 
         // 记录用户参与
         let mut participations = self
             .state
             .user_participations
-            .get(&user)
+            .get(&wallet_address)
             .await
-            .unwrap()
+            .map_err(|_| quiz::QuizError::InternalError)?
             .unwrap_or_default();
-        participations.push(quiz_id);
-        let _ = self.state.user_participations.insert(&user, participations);
+        participations.push(params.quiz_id);
+        self.state
+            .user_participations
+            .insert(&wallet_address, participations)
+            .map_err(|_| quiz::QuizError::InternalError)?;
 
         // 更新排行榜
-        self.update_leaderboard(quiz_id, user, score).await;
+        self.update_leaderboard(params.quiz_id, wallet_address, score)
+            .await?;
+        Ok(())
     }
 
-    async fn update_leaderboard(&mut self, quiz_id: u64, user: String, score: u32) {
+    async fn start_quiz(&mut self, quiz_id: u64) -> Result<(), quiz::QuizError> {
+        let wallet_address = self
+            .runtime
+            .authenticated_signer()
+            .ok_or(quiz::QuizError::InsufficientPermissions)?
+            .to_string();
+        let now = self.runtime.system_time();
+
+        // 检查Quiz是否存在
+        let mut quiz_set = self
+            .state
+            .quiz_sets
+            .get(&quiz_id)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .ok_or(quiz::QuizError::QuizNotFound)?;
+
+        // 检查是否是创建者
+        if quiz_set.creator != wallet_address {
+            return Err(quiz::QuizError::InsufficientPermissions);
+        }
+
+        // 检查是否是手动开始模式
+        if quiz_set.start_mode != QuizStartMode::Manual {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+
+        // 检查测验是否已开始
+        if quiz_set.is_started {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+
+        // 检查测验是否在时间范围内
+        if !(now >= quiz_set.start_time) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+        if !(now <= quiz_set.end_time) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+
+        // 开始测验
+        quiz_set.is_started = true;
+        self.state
+            .quiz_sets
+            .insert(&quiz_id, quiz_set)
+            .map_err(|_| quiz::QuizError::InternalError)?;
+        Ok(())
+    }
+
+    async fn register_for_quiz(&mut self, quiz_id: u64) -> Result<(), quiz::QuizError> {
+        let wallet_address = self
+            .runtime
+            .authenticated_signer()
+            .ok_or(quiz::QuizError::InsufficientPermissions)?
+            .to_string();
+        let now = self.runtime.system_time();
+
+        // 检查Quiz是否存在
+        let mut quiz_set = self
+            .state
+            .quiz_sets
+            .get(&quiz_id)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .ok_or(quiz::QuizError::QuizNotFound)?;
+
+        // 检查是否是报名模式
+        if quiz_set.mode != QuizMode::Registration {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+
+        // 检查测验是否已开始或已结束
+        if quiz_set.is_started {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+        if !(now < quiz_set.end_time) {
+            return Err(quiz::QuizError::InvalidParameters);
+        }
+
+        // 检查用户是否已存在
+        let _user = self
+            .state
+            .users
+            .get(&wallet_address)
+            .await
+            .map_err(|_| quiz::QuizError::InternalError)?
+            .ok_or(quiz::QuizError::UserNotFound)?;
+
+        // 检查用户是否已报名
+        if quiz_set.registered_users.contains(&wallet_address) {
+            return Err(quiz::QuizError::UserAlreadyRegistered);
+        }
+
+        // 报名
+        quiz_set.registered_users.push(wallet_address);
+        self.state
+            .quiz_sets
+            .insert(&quiz_id, quiz_set)
+            .map_err(|_| quiz::QuizError::InternalError)?;
+        Ok(())
+    }
+
+    async fn update_leaderboard(
+        &mut self,
+        quiz_id: u64,
+        user: String,
+        score: u32,
+    ) -> Result<(), quiz::QuizError> {
         // 这里简单实现一个排行榜更新逻辑
         // 实际项目中可能需要更复杂的排序和存储策略
         let mut entries = self
@@ -277,7 +574,7 @@ impl QuizContract {
             .leaderboard
             .get(&quiz_id)
             .await
-            .unwrap()
+            .map_err(|_| quiz::QuizError::InternalError)?
             .unwrap_or_default();
 
         // 查找用户是否已有条目
@@ -299,6 +596,10 @@ impl QuizContract {
         entries.sort_by(|a, b| b.score.cmp(&a.score));
 
         // 保存更新后的排行榜
-        let _ = self.state.leaderboard.insert(&quiz_id, entries);
+        self.state
+            .leaderboard
+            .insert(&quiz_id, entries)
+            .map_err(|_| quiz::QuizError::InternalError)?;
+        Ok(())
     }
 }

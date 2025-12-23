@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@apollo/client": "^3.13.0",
-    "@linera/client": "^0.15.6",
+    "@linera/client": "^0.15.8",
     "@mdi/font": "^7.4.47",
     "@vitejs/plugin-vue-jsx": "^5.1.2",
     "@vue/apollo-composable": "^4.0.0",

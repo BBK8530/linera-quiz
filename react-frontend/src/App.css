@@ -1212,22 +1212,23 @@ button:disabled {
   padding: 16px 20px;
   border-radius: 12px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  border-left: 4px solid transparent;
   animation: slideIn 0.3s ease-out;
   transition: all 0.3s ease;
   background-color: white;
   border-left: 4px solid;
-}
+  }
 
 @keyframes slideIn {
   from {
     transform: translateX(100%);
     opacity: 0;
-  }
+      }
   to {
     transform: translateX(0);
     opacity: 1;
   }
-}
+  }
 
 .notification-closing {
   animation: slideOut 0.3s ease-in forwards;
@@ -1237,7 +1238,7 @@ button:disabled {
   from {
     transform: translateX(0);
     opacity: 1;
-  }
+    }
   to {
     transform: translateX(100%);
     opacity: 0;
@@ -1319,4 +1320,149 @@ button:disabled {
     right: 20px;
     max-width: none;
   }
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-overlay.visible {
+  display: flex;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 1rem 2rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-title {
+  color: #2d3748;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal-close-button {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  color: #718096;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.modal-close-button:hover {
+  background-color: #f7fafc;
+  color: #4a5568;
+}
+
+.modal-body {
+  margin-bottom: 1.5rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* Settings icon button */
+.settings-icon-button {
+  background: transparent;
+  color: #DE2A02;
+  border: 2px solid #DE2A02;
+  padding: 0.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  gap: 0.5rem;
+  width: 48px;
+  height: 48px;
+}
+
+.settings-icon-button:hover {
+  background: #DE2A02;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.settings-icon-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 旋转动画 */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 连接状态图标样式 */
+.connected-icon {
+  color: #22c55e;
+  font-size: 1rem;
+  vertical-align: middle;
+  margin-left: 0.25rem;
+}
+
+.connecting-icon {
+  color: #f59e0b;
+  font-size: 1rem;
+  vertical-align: middle;
+  margin-left: 0.25rem;
+}
+
+.disconnected-icon {
+  color: #ef4444;
+  font-size: 1rem;
+  vertical-align: middle;
+  margin-left: 0.25rem;
+}
+
+/* 应用旋转动画 */
+.spin {
+  animation: spin 1s linear infinite;
 }

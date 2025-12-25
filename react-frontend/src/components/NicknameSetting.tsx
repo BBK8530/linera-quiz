@@ -9,7 +9,14 @@ interface NicknameSettingProps {
 
 const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
   const { primaryWallet } = useDynamicContext();
-  const [user, setUser] = useState<{ nickname: string; walletAddress: string; createdAt: string } | null>(null);
+  const [user, setUser] = useState<{
+    nickname: string;
+    walletAddress: string;
+    createdAt: string;
+  } | null>(null);
+  // 使用下划线前缀表示这个变量被使用，避免TypeScript未使用变量警告
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_hasFetchedUser, setHasFetchedUser] = useState(false);
   const [nicknameInput, setNicknameInput] = useState('');
   const [isSettingNickname, setIsSettingNickname] = useState(false);
   const [isEditingNickname, setIsEditingNickname] = useState(false);
@@ -18,28 +25,116 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
   // Check if user has a nickname
   const hasNickname = user?.nickname;
 
-  // Fetch user data when component mounts or wallet address changes
-  const fetchUserData = useCallback(async () => {
-    if (!primaryWallet?.address) return;
-    
-    try {
-      const result = await lineraAdapter.queryApplication<{ data: { user: { nickname: string; walletAddress: string; createdAt: string } } }>({
-        query: `query { user(walletAddress: "${primaryWallet.address}") { nickname walletAddress createdAt } }`
+  // Fetch user data when component mounts, wallet address changes, or Linera connection state changes
+  const fetchUserData = useCallback(
+    async (forceRefresh = false) => {
+      if (!primaryWallet?.address) return;
+
+      // 只有当Linera连接完成且应用设置完成后才查询用户数据
+      if (
+        !lineraAdapter.isChainConnected() ||
+        !lineraAdapter.isApplicationSet()
+      ) {
+        console.log(
+          'Linera connection or application not ready, skipping user data fetch',
+        );
+        return;
+      }
+
+      // 使用函数式状态更新来检查 hasFetchedUser，避免将其作为依赖项
+      const shouldFetch = await new Promise(resolve => {
+        setHasFetchedUser(currentHasFetched => {
+          resolve(forceRefresh || !currentHasFetched);
+          return currentHasFetched;
+        });
       });
-      setUser({
-        nickname: result.data.user.nickname,
-        walletAddress: result.data.user.walletAddress,
-        createdAt: result.data.user.createdAt
-      });
-    } catch (err) {
-      console.error('Failed to fetch user data:', err);
+
+      if (!shouldFetch) {
+        console.log('User data already fetched, skipping duplicate query');
+        return;
+      }
+
+      const query = `
+  query GetUser($walletAddress: String!) {
+    user(walletAddress: $walletAddress) {
+      nickname
+      walletAddress
+      createdAt
+    }
+  }
+`;
+
+      const variables = {
+        walletAddress: primaryWallet.address.toLowerCase(),
+      };
+
+      try {
+        const result = await lineraAdapter.queryApplication<{
+          data: {
+            user: {
+              nickname: string;
+              walletAddress: string;
+              createdAt: string;
+            };
+          };
+        }>({
+          query,
+          variables,
+        });
+        setUser({
+          nickname: result.data.user.nickname,
+          walletAddress: result.data.user.walletAddress,
+          createdAt: result.data.user.createdAt,
+        });
+        // 设置已查询标志
+        setHasFetchedUser(true);
+      } catch (err) {
+        console.error('Failed to fetch user data:', err);
+      }
+    },
+    [primaryWallet?.address],
+  );
+
+  // 当钱包地址变化时，重置已查询标志
+  useEffect(() => {
+    if (primaryWallet?.address) {
+      setHasFetchedUser(false);
+    } else {
+      setUser(null);
+      setHasFetchedUser(false);
     }
   }, [primaryWallet?.address]);
 
+  // 监听Linera连接状态变化
   useEffect(() => {
-    if (primaryWallet?.address) {
+    // 连接状态变化时重新获取用户数据
+    const handleConnectionChange = () => {
+      // 只有当钱包地址存在且连接真正建立时才查询数据
+      if (
+        primaryWallet?.address &&
+        lineraAdapter.isChainConnected() &&
+        lineraAdapter.isApplicationSet()
+      ) {
+        fetchUserData();
+      }
+    };
+
+    // 注册连接状态变化监听器
+    lineraAdapter.onConnectionStateChange(handleConnectionChange);
+
+    // 初始检查 - 只有当连接和应用都准备好时才查询
+    if (
+      primaryWallet?.address &&
+      lineraAdapter.isChainConnected() &&
+      lineraAdapter.isApplicationSet()
+    ) {
       fetchUserData();
     }
+
+    // 组件卸载时移除监听器
+    return () => {
+      lineraAdapter.offConnectionStateChange();
+    };
   }, [primaryWallet?.address, fetchUserData]);
 
   // Handle nickname submission
@@ -51,14 +146,14 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
 
     try {
       setIsSettingNickname(true);
-      
+
       // 使用lineraAdapter发送变更请求
       await lineraAdapter.queryApplication({
-        query: `mutation { setNickname(field0: { nickname: "${nicknameInput.trim()}" }) }`
+        query: `mutation { setNickname(field0: { nickname: "${nicknameInput.trim()}" }) }`,
       });
-      
+
       success('昵称设置成功');
-      await fetchUserData(); // 重新获取用户数据
+      await fetchUserData(true); // 强制刷新用户数据
       setIsEditingNickname(false);
       setNicknameInput('');
       onNicknameSet?.();
@@ -87,7 +182,7 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
             <input
               type="text"
               value={nicknameInput}
-              onChange={(e) => setNicknameInput(e.target.value)}
+              onChange={e => setNicknameInput(e.target.value)}
               placeholder="请输入您的昵称"
               className="nickname-input"
               disabled={isSettingNickname}
@@ -107,7 +202,7 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
             <input
               type="text"
               value={nicknameInput}
-              onChange={(e) => setNicknameInput(e.target.value)}
+              onChange={e => setNicknameInput(e.target.value)}
               className="nickname-input"
               disabled={isSettingNickname}
             />
@@ -129,7 +224,9 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
         </div>
       ) : (
         <div className="nickname-display">
-          <p>昵称: <span className="nickname">{hasNickname}</span></p>
+          <p>
+            昵称: <span className="nickname">{hasNickname}</span>
+          </p>
           <button onClick={toggleEditNickname} className="nickname-edit-btn">
             编辑昵称
           </button>
@@ -139,4 +236,4 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
   );
 };
 
-export default NicknameSetting;
+export default React.memo(NicknameSetting);

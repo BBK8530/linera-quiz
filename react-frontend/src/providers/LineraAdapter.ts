@@ -122,6 +122,21 @@ export class LineraAdapter {
     return response as T;
   }
 
+  async mutateApplication<T>(mutation: object): Promise<T> {
+    if (!this.application) throw new Error('Application not set');
+
+    const mutationString = JSON.stringify(mutation);
+    console.log('📤 Sending Linera mutation:', mutationString);
+
+    // Use query method for mutations as execute method doesn't exist in Application class
+    const result = await this.application.query(mutationString);
+
+    console.log('📥 Received Linera mutation response:', result);
+
+    const response = JSON.parse(result);
+    return response as T;
+  }
+
   getProvider(): LineraProvider {
     if (!this.provider) throw new Error('Provider not set');
     return this.provider;

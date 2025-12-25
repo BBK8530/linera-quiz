@@ -55,14 +55,14 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
       }
 
       const query = `
-  query GetUser($walletAddress: String!) {
-    user(walletAddress: $walletAddress) {
-      nickname
-      walletAddress
-      createdAt
-    }
-  }
-`;
+        query GetUser($walletAddress: String!) {
+          user(walletAddress: $walletAddress) {
+            nickname
+            walletAddress
+            createdAt
+          }
+        }
+      `;
 
       const variables = {
         walletAddress: primaryWallet.address.toLowerCase(),
@@ -133,7 +133,7 @@ const NicknameSetting: React.FC<NicknameSettingProps> = ({ onNicknameSet }) => {
 
     // 组件卸载时移除监听器
     return () => {
-      lineraAdapter.offConnectionStateChange();
+      lineraAdapter.offConnectionStateChange(handleConnectionChange);
     };
   }, [primaryWallet?.address, fetchUserData]);
 

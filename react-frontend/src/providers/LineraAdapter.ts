@@ -23,7 +23,7 @@ export class LineraAdapter {
   private application: Application | null = null;
   private wasmInitPromise: Promise<unknown> | null = null;
   private connectPromise: Promise<LineraProvider> | null = null;
-  private onConnectionChange?: () => void;
+  private onConnectionChangeCallbacks: Array<() => void> = [];
 
   private constructor() {}
 
@@ -79,7 +79,10 @@ export class LineraAdapter {
           address: dynamicWallet.address,
         };
 
-        this.onConnectionChange?.();
+        // 触发所有连接状态变化回调
+        this.onConnectionChangeCallbacks.forEach(callback => callback());
+        // 连接成功后清除connectPromise，避免内存泄漏
+        this.connectPromise = null;
         return this.provider;
       })();
 
@@ -87,13 +90,13 @@ export class LineraAdapter {
       return provider;
     } catch (error) {
       console.error('Failed to connect to Linera:', error);
+      // 只有在连接失败时才清除connectPromise
+      this.connectPromise = null;
       throw new Error(
         `Failed to connect to Linera network: ${
           error instanceof Error ? error.message : 'Unknown error'
         }`,
       );
-    } finally {
-      this.connectPromise = null;
     }
   }
 
@@ -105,7 +108,8 @@ export class LineraAdapter {
     if (!application) throw new Error('Failed to get application');
     console.log('✅ Linera application set successfully!');
     this.application = application;
-    this.onConnectionChange?.();
+    // 触发所有连接状态变化回调
+    this.onConnectionChangeCallbacks.forEach(callback => callback());
   }
 
   async queryApplication<T>(query: object): Promise<T> {
@@ -119,6 +123,15 @@ export class LineraAdapter {
     console.log('📥 Received Linera response:', result);
 
     const response = JSON.parse(result);
+
+    // Check for errors in the response
+    if (response.errors && response.errors.length > 0) {
+      const errorMessages = response.errors
+        .map((error: any) => error.message)
+        .join('\n');
+      throw new Error(`Linera query error: ${errorMessages}`);
+    }
+
     return response as T;
   }
 
@@ -134,6 +147,15 @@ export class LineraAdapter {
     console.log('📥 Received Linera mutation response:', result);
 
     const response = JSON.parse(result);
+
+    // Check for errors in the response
+    if (response.errors && response.errors.length > 0) {
+      const errorMessages = response.errors
+        .map((error: any) => error.message)
+        .join('\n');
+      throw new Error(`Linera mutation error: ${errorMessages}`);
+    }
+
     return response as T;
   }
 
@@ -166,18 +188,24 @@ export class LineraAdapter {
   }
 
   onConnectionStateChange(callback: () => void): void {
-    this.onConnectionChange = callback;
+    this.onConnectionChangeCallbacks.push(callback);
   }
 
-  offConnectionStateChange(): void {
-    this.onConnectionChange = undefined;
+  offConnectionStateChange(callback?: () => void): void {
+    if (callback) {
+      this.onConnectionChangeCallbacks =
+        this.onConnectionChangeCallbacks.filter(cb => cb !== callback);
+    } else {
+      this.onConnectionChangeCallbacks = [];
+    }
   }
 
   reset(): void {
     this.application = null;
     this.provider = null;
     this.connectPromise = null;
-    this.onConnectionChange?.();
+    // 触发所有连接状态变化回调
+    this.onConnectionChangeCallbacks.forEach(callback => callback());
   }
 }
 

@@ -27,9 +27,10 @@ const QuizList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [currentPage, setCurrentPage] = useState(1);
+  const [allQuizzes, setAllQuizzes] = useState<Quiz[]>([]);
   const [filteredQuizzes, setFilteredQuizzes] = useState<Quiz[]>([]);
   const [loading, setLoading] = useState(false);
-  
+
   const pageSize = 6;
   const sortOptions = [
     { value: 'createdAt', label: 'Recently Created' },
@@ -38,75 +39,96 @@ const QuizList: React.FC = () => {
   ];
 
   // Process quiz data with search and sorting
-  const processQuizData = useCallback((quizzes: Quiz[]) => {
-    let processed = [...quizzes];
+  const processQuizData = useCallback(
+    (quizzes: Quiz[]) => {
+      let processed = [...quizzes];
 
-    // Search functionality
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      processed = processed.filter(
-        (quiz) =>
-          quiz.title.toLowerCase().includes(term) ||
-          quiz.description.toLowerCase().includes(term)
-      );
-    }
-
-    // Sort functionality
-    processed.sort((a, b) => {
-      if (sortBy === 'createdAt') {
-        return Number(b.createdAt) - Number(a.createdAt);
-      } else if (sortBy === 'title') {
-        return a.title.localeCompare(b.title);
-      } else if (sortBy === 'questions') {
-        return b.questions.length - a.questions.length;
+      // Search functionality
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        processed = processed.filter(
+          quiz =>
+            quiz.title.toLowerCase().includes(term) ||
+            quiz.description.toLowerCase().includes(term),
+        );
       }
-      return 0;
-    });
 
-    setFilteredQuizzes(processed);
-  }, [searchTerm, sortBy]);
+      // Sort functionality
+      processed.sort((a, b) => {
+        if (sortBy === 'createdAt') {
+          return Number(b.createdAt) - Number(a.createdAt);
+        } else if (sortBy === 'title') {
+          return a.title.localeCompare(b.title);
+        } else if (sortBy === 'questions') {
+          return b.questions.length - a.questions.length;
+        }
+        return 0;
+      });
+
+      setFilteredQuizzes(processed);
+    },
+    [searchTerm, sortBy],
+  );
 
   // Fetch quizzes using Linera SDK
   const fetchQuizzes = useCallback(async () => {
     if (!primaryWallet?.address) return;
-    
+
     try {
       setLoading(true);
-      
+
       // Connect to Linera if not already connected
       await lineraAdapter.connect(primaryWallet);
-      
+
       // Set application if not already set
       if (!lineraAdapter.isApplicationSet()) {
         await lineraAdapter.setApplication();
       }
-      
-      const result = await lineraAdapter.queryApplication<{ data: { quizSet: Quiz[] } }>({
-        query: `query { quizSet { id title description duration creatorNickname isStarted isEnded registeredCount questions { id text options correctAnswer } createdAt } }`
+      const query = `query GetQuizSets($limit: Int, $offset: Int) {
+        quizSets(limit: $limit, offset: $offset, sortBy: "created_at", sortDirection: DESC) {
+          id
+          title
+          description
+          creatorNickname
+          startTime
+          endTime
+          mode
+          isStarted
+          participantCount
+        }
+      }`;
+      const result = await lineraAdapter.queryApplication<{
+        data: { quizSets: Quiz[] };
+      }>({
+        query,
+        variables: {
+          limit: pageSize,
+          offset: (currentPage - 1) * pageSize,
+        },
       });
-      
-      if (result.data?.quizSet) {
-        processQuizData(result.data.quizSet);
+
+      if (result.data?.quizSets) {
+        setAllQuizzes(result.data.quizSets);
       }
     } catch (err) {
       console.error('Failed to fetch quizzes:', err);
     } finally {
       setLoading(false);
     }
-  }, [primaryWallet, processQuizData]);
+  }, [primaryWallet, currentPage]);
 
   useEffect(() => {
     if (primaryWallet?.address) {
       fetchQuizzes();
     }
-  }, [primaryWallet?.address, fetchQuizzes]);
+  }, [primaryWallet?.address, currentPage]);
 
   useEffect(() => {
     // Re-process data when search/sort changes
-    if (filteredQuizzes.length > 0) {
-      processQuizData(filteredQuizzes);
+    if (allQuizzes.length > 0) {
+      processQuizData(allQuizzes);
     }
-  }, [searchTerm, sortBy, currentPage, filteredQuizzes, processQuizData]);
+  }, [searchTerm, sortBy, currentPage, allQuizzes, processQuizData]);
 
   const formatDate = (timestamp: string) => {
     try {
@@ -124,7 +146,7 @@ const QuizList: React.FC = () => {
       .then(() => {
         alert('Quiz link copied to clipboard!');
       })
-      .catch((err) => {
+      .catch(err => {
         console.error('Failed to copy link: ', err);
         alert(`Failed to copy link. Please try again: ${link}`);
       });
@@ -134,35 +156,41 @@ const QuizList: React.FC = () => {
     setCurrentPage(page);
   };
 
-  if (loading) return (
-    <div className="quiz-list">
-      <div className="quiz-list-filters">
-        <div className="search-bar">
-          <div className="skeleton-text" style={{height: '44px'}}></div>
-        </div>
-        <div className="sort-dropdown">
-          <div className="skeleton-text" style={{height: '44px', width: '200px'}}></div>
-        </div>
-      </div>
-      <div className="quiz-grid">
-        {Array(6).fill(0).map((_, i) => (
-          <div key={i} className="quiz-card skeleton skeleton-card">
-            <div className="skeleton-title"></div>
-            <div className="skeleton-text"></div>
-            <div className="skeleton-text"></div>
-            <div className="skeleton-text"></div>
-            <div className="skeleton-text"></div>
-            <div className="skeleton-button"></div>
+  if (loading)
+    return (
+      <div className="quiz-list">
+        <div className="quiz-list-filters">
+          <div className="search-bar">
+            <div className="skeleton-text" style={{ height: '44px' }}></div>
           </div>
-        ))}
+          <div className="sort-dropdown">
+            <div
+              className="skeleton-text"
+              style={{ height: '44px', width: '200px' }}
+            ></div>
+          </div>
+        </div>
+        <div className="quiz-grid">
+          {Array(6)
+            .fill(0)
+            .map((_, i) => (
+              <div key={i} className="quiz-card skeleton skeleton-card">
+                <div className="skeleton-title"></div>
+                <div className="skeleton-text"></div>
+                <div className="skeleton-text"></div>
+                <div className="skeleton-text"></div>
+                <div className="skeleton-text"></div>
+                <div className="skeleton-button"></div>
+              </div>
+            ))}
+        </div>
       </div>
-    </div>
-  );
+    );
 
   const totalPages = Math.ceil(filteredQuizzes.length / pageSize);
   const paginatedQuizzes = filteredQuizzes.slice(
     (currentPage - 1) * pageSize,
-    currentPage * pageSize
+    currentPage * pageSize,
   );
 
   return (
@@ -174,17 +202,17 @@ const QuizList: React.FC = () => {
             type="text"
             placeholder="Search all quizzes..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={e => setSearchTerm(e.target.value)}
             className="search-input"
           />
         </div>
         <div className="sort-dropdown">
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
+            onChange={e => setSortBy(e.target.value)}
             className="sort-select"
           >
-            {sortOptions.map((option) => (
+            {sortOptions.map(option => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -210,17 +238,23 @@ const QuizList: React.FC = () => {
               </div>
               <div className="quiz-status">
                 {quiz.isEnded && <span className="status ended">已结束</span>}
-                {quiz.isStarted && !quiz.isEnded && <span className="status started">进行中</span>}
-                {!quiz.isStarted && !quiz.isEnded && <span className="status pending">待开始</span>}
+                {quiz.isStarted && !quiz.isEnded && (
+                  <span className="status started">进行中</span>
+                )}
+                {!quiz.isStarted && !quiz.isEnded && (
+                  <span className="status pending">待开始</span>
+                )}
               </div>
               <div className="quiz-actions">
-                <button 
+                <button
                   className="action-button primary"
-                  onClick={() => window.location.href = `/quiz-rank/${quiz.id}`}
+                  onClick={() =>
+                    (window.location.href = `/quiz-rank/${quiz.id}`)
+                  }
                 >
                   View Rankings
                 </button>
-                <button 
+                <button
                   className="action-button secondary"
                   onClick={() => copyQuizLink(quiz.id)}
                 >
@@ -241,7 +275,7 @@ const QuizList: React.FC = () => {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="pagination">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
             <button
               key={page}
               className={`page-button ${currentPage === page ? 'active' : ''}`}

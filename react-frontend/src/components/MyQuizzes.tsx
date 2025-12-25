@@ -153,21 +153,21 @@ const MyQuizzes: React.FC = () => {
       });
 
       if (result.data?.quizSet) {
-        processQuizData(result.data.quizSet);
+        setAllQuizzes(result.data.quizSet);
       }
     } catch (err) {
       console.error('Failed to fetch quizzes:', err);
     } finally {
       setLoading(false);
     }
-  }, [primaryWallet, processQuizData]);
+  }, [primaryWallet]);
 
   useEffect(() => {
     if (primaryWallet?.address) {
       fetchUserData();
       fetchQuizzes();
     }
-  }, [primaryWallet?.address, fetchUserData, fetchQuizzes]);
+  }, [primaryWallet?.address]);
 
   useEffect(() => {
     // Re-process data when search/sort changes

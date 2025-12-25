@@ -36,7 +36,7 @@ const Header: React.FC = () => {
             Create Quiz
           </Link>
           <Link to="/rankings" className="nav-link">
-            Global Rankings
+            Leadboard
           </Link>
         </nav>
         {user && primaryWallet ? <UserInfo /> : <LoginButton />}
@@ -156,7 +156,7 @@ function App() {
                   element={
                     <div className="content-wrapper">
                       <div className="content-header">
-                        <h2>Global Rankings</h2>
+                        <h2>Leadboard</h2>
                       </div>
                       <GlobalRankings />
                     </div>

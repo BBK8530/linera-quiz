@@ -121,7 +121,7 @@ const GlobalRankings: React.FC = () => {
     return (
       <div className="global-rankings">
         <div className="rankings-header">
-          <h2>Global Rankings</h2>
+          <h2>Leadboard</h2>
           <div
             className="skeleton-text"
             style={{ height: '44px', width: '200px' }}
@@ -211,7 +211,7 @@ const GlobalRankings: React.FC = () => {
     return (
       <div className="global-rankings">
         <div className="rankings-header">
-          <h2>Global Rankings</h2>
+          <h2>Leadboard</h2>
         </div>
         <div className="error-container">
           <p className="error-message">{error}</p>
@@ -229,7 +229,7 @@ const GlobalRankings: React.FC = () => {
   return (
     <div className="global-rankings">
       <div className="rankings-header">
-        <h2>Global Rankings</h2>
+        <h2>Leadboard</h2>
         <div className="sort-controls">
           <label>Sort by: </label>
           <select

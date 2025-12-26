@@ -48,10 +48,10 @@ export class DynamicSigner implements Signer {
 
       if (!signature) throw new Error("Failed to sign message");
       return signature;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to sign message:", error);
       throw new Error(
-        `Dynamic signature request failed: ${error instanceof Error ? error.message : String(error)}`
+        `Dynamic signature request failed: ${error?.message || error}`
       );
     }
   }

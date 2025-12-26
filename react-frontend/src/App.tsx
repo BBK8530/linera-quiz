@@ -13,6 +13,7 @@ import { BrowserRouter, Routes, Route, Link, Outlet } from 'react-router-dom';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
 import NotificationProvider from './components/NotificationContext';
 import NotificationContainer from './components/NotificationContainer';
+import ConnectionProvider from './contexts/ConnectionContext';
 import './App.css';
 
 // 创建Header组件
@@ -93,79 +94,81 @@ function App() {
     <DynamicWalletProvider>
       <ApolloProvider client={client}>
         <NotificationProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Layout />}>
-                <Route
-                  index
-                  element={
-                    <div className="content-wrapper">
-                      <div className="content-header">
-                        <h2>All Quizzes</h2>
+          <ConnectionProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Layout />}>
+                  <Route
+                    index
+                    element={
+                      <div className="content-wrapper">
+                        <div className="content-header">
+                          <h2>All Quizzes</h2>
+                        </div>
+                        <QuizList />
                       </div>
-                      <QuizList />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/my-quizzes"
-                  element={
-                    <div className="content-wrapper">
-                      <div className="content-header">
-                        <h2>My Quizzes</h2>
+                    }
+                  />
+                  <Route
+                    path="/my-quizzes"
+                    element={
+                      <div className="content-wrapper">
+                        <div className="content-header">
+                          <h2>My Quizzes</h2>
+                        </div>
+                        <MyQuizzes />
                       </div>
-                      <MyQuizzes />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/create"
-                  element={
-                    <div className="content-wrapper">
-                      <div className="content-header">
-                        <h2>Create Quiz</h2>
+                    }
+                  />
+                  <Route
+                    path="/create"
+                    element={
+                      <div className="content-wrapper">
+                        <div className="content-header">
+                          <h2>Create Quiz</h2>
+                        </div>
+                        <CreateQuizForm />
                       </div>
-                      <CreateQuizForm />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/quiz/:quizId"
-                  element={
-                    <div className="content-wrapper">
-                      <div className="content-header">
-                        <h2>Take Quiz</h2>
+                    }
+                  />
+                  <Route
+                    path="/quiz/:quizId"
+                    element={
+                      <div className="content-wrapper">
+                        <div className="content-header">
+                          <h2>Take Quiz</h2>
+                        </div>
+                        <QuizTakingPage />
                       </div>
-                      <QuizTakingPage />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/quiz-rank/:quizId"
-                  element={
-                    <div className="content-wrapper">
-                      <div className="content-header">
-                        <h2>Quiz Rankings</h2>
+                    }
+                  />
+                  <Route
+                    path="/quiz-rank/:quizId"
+                    element={
+                      <div className="content-wrapper">
+                        <div className="content-header">
+                          <h2>Quiz Rankings</h2>
+                        </div>
+                        <QuizRankings />
                       </div>
-                      <QuizRankings />
-                    </div>
-                  }
-                />
-                <Route
-                  path="/rankings"
-                  element={
-                    <div className="content-wrapper">
-                      <div className="content-header">
-                        <h2>Leadboard</h2>
+                    }
+                  />
+                  <Route
+                    path="/rankings"
+                    element={
+                      <div className="content-wrapper">
+                        <div className="content-header">
+                          <h2>Leadboard</h2>
+                        </div>
+                        <GlobalRankings />
                       </div>
-                      <GlobalRankings />
-                    </div>
-                  }
-                />
-              </Route>
-            </Routes>
-            <NotificationContainer />
-          </BrowserRouter>
+                    }
+                  />
+                </Route>
+              </Routes>
+              <NotificationContainer />
+            </BrowserRouter>
+          </ConnectionProvider>
         </NotificationProvider>
       </ApolloProvider>
     </DynamicWalletProvider>

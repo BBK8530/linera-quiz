@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { lineraAdapter } from '../providers/LineraAdapter';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
+import { useConnection } from '../contexts/ConnectionContext';
 
 interface Question {
   id: string;
@@ -30,6 +30,7 @@ interface User {
 
 const MyQuizzes: React.FC = () => {
   const { primaryWallet } = useDynamicContext();
+  const { isLineraConnected, connectToLinera, queryApplication } = useConnection();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [currentPage, setCurrentPage] = useState(1);
@@ -50,11 +51,8 @@ const MyQuizzes: React.FC = () => {
   const fetchUserData = useCallback(async () => {
     if (!primaryWallet?.address) return;
 
-    // Only fetch if connected and application is set
-    if (
-      !lineraAdapter.isChainConnected() ||
-      !lineraAdapter.isApplicationSet()
-    ) {
+    // Only fetch if connected
+    if (!isLineraConnected) {
       return;
     }
 
@@ -76,20 +74,16 @@ const MyQuizzes: React.FC = () => {
     };
 
     try {
-      const result = await lineraAdapter.queryApplication<{
-        data: {
-          user: User;
-        };
-      }>({
+      const result = await queryApplication({
         query,
         variables,
-      });
+      }) as { data: { user: User } };
       setUser(result.data.user);
       setHasFetchedUser(true);
     } catch (err) {
       console.error('Failed to fetch user data:', err);
     }
-  }, [primaryWallet?.address, hasFetchedUser]);
+  }, [primaryWallet?.address, hasFetchedUser, isLineraConnected, queryApplication]);
 
   // Process quiz data with search and sorting
   const processQuizData = useCallback(
@@ -131,26 +125,24 @@ const MyQuizzes: React.FC = () => {
     [searchTerm, sortBy, user?.nickname],
   );
 
-  // Fetch quizzes using Linera SDK
+  // Fetch quizzes using unified connection management
   const fetchQuizzes = useCallback(async () => {
     if (!primaryWallet?.address) return;
 
     try {
       setLoading(true);
 
-      // Connect to Linera if not already connected
-      await lineraAdapter.connect(primaryWallet);
-
-      // Set application if not already set
-      if (!lineraAdapter.isApplicationSet()) {
-        await lineraAdapter.setApplication();
+      // Ensure connected to Linera (using unified connection management)
+      if (!isLineraConnected) {
+        console.log('🔗 Connecting to Linera via unified connection...');
+        await connectToLinera();
+      } else {
+        console.log('🔗 Using existing Linera connection');
       }
 
-      const result = await lineraAdapter.queryApplication<{
-        data: { quizSet: Quiz[] };
-      }>({
+      const result = await queryApplication({
         query: `query { quizSet { id title description duration creatorNickname isStarted isEnded registeredCount questions { id text options correctAnswer } createdAt } }`,
-      });
+      }) as { data: { quizSet: Quiz[] } };
 
       if (result.data?.quizSet) {
         setAllQuizzes(result.data.quizSet);
@@ -160,14 +152,14 @@ const MyQuizzes: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [primaryWallet]);
+  }, [primaryWallet, isLineraConnected, connectToLinera, queryApplication]);
 
   useEffect(() => {
     if (primaryWallet?.address) {
       fetchUserData();
       fetchQuizzes();
     }
-  }, [primaryWallet?.address]);
+  }, [primaryWallet?.address, fetchUserData, fetchQuizzes]);
 
   useEffect(() => {
     // Re-process data when search/sort changes

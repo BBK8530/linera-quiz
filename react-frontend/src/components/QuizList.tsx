@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { lineraAdapter } from '../providers/LineraAdapter';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
+import { useConnection } from '../contexts/ConnectionContext';
 
 interface Question {
   id: string;
@@ -24,12 +24,18 @@ interface Quiz {
 
 const QuizList: React.FC = () => {
   const { primaryWallet } = useDynamicContext();
+  const { isLineraConnected, connectToLinera, queryApplication } = useConnection();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [currentPage, setCurrentPage] = useState(1);
   const [allQuizzes, setAllQuizzes] = useState<Quiz[]>([]);
   const [filteredQuizzes, setFilteredQuizzes] = useState<Quiz[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // 新增：查询去重和防抖相关状态
+  const [isQuerying, setIsQuerying] = useState(false);
+  const [queryCache, setQueryCache] = useState<Map<string, Quiz[]>>(new Map());
+  const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
 
   const pageSize = 6;
   const sortOptions = [
@@ -70,58 +76,145 @@ const QuizList: React.FC = () => {
     [searchTerm, sortBy],
   );
 
-  // Fetch quizzes using Linera SDK
-  const fetchQuizzes = useCallback(async () => {
-    if (!primaryWallet?.address) return;
+  // 生成查询缓存键
+  const generateCacheKey = useCallback((walletAddress: string, page: number, limit: number) => {
+    return `${walletAddress}_page_${page}_limit_${limit}`;
+  }, []);
 
-    try {
-      setLoading(true);
-
-      // Connect to Linera if not already connected
-      await lineraAdapter.connect(primaryWallet);
-
-      // Set application if not already set
-      if (!lineraAdapter.isApplicationSet()) {
-        await lineraAdapter.setApplication();
-      }
-      const query = `query GetQuizSets($limit: Int, $offset: Int) {
-        quizSets(limit: $limit, offset: $offset, sortBy: "created_at", sortDirection: DESC) {
-          id
-          title
-          description
-          creatorNickname
-          startTime
-          endTime
-          mode
-          isStarted
-          participantCount
-        }
-      }`;
-      const result = await lineraAdapter.queryApplication<{
-        data: { quizSets: Quiz[] };
-      }>({
-        query,
-        variables: {
-          limit: pageSize,
-          offset: (currentPage - 1) * pageSize,
-        },
-      });
-
-      if (result.data?.quizSets) {
-        setAllQuizzes(result.data.quizSets);
-      }
-    } catch (err) {
-      console.error('Failed to fetch quizzes:', err);
-    } finally {
-      setLoading(false);
+  // Fetch quizzes with strict deduplication and debouncing
+  const fetchQuizzes = useCallback(async (immediate = false) => {
+    const walletAddress = primaryWallet?.address;
+    if (!walletAddress) {
+      console.log('⏭️ No wallet address, skipping query');
+      return;
     }
-  }, [primaryWallet, currentPage]);
 
+    // 生成缓存键
+    const cacheKey = generateCacheKey(walletAddress, currentPage, pageSize);
+    
+    // 严格检查：是否已在查询中
+    if (isQuerying) {
+      console.log('🔄 Query already in progress, skipping...');
+      return;
+    }
+
+    // 严格检查：缓存命中
+    if (queryCache.has(cacheKey)) {
+      console.log('📋 Using cached quiz data for key:', cacheKey);
+      const cachedData = queryCache.get(cacheKey);
+      if (cachedData) {
+        setAllQuizzes(cachedData);
+        return;
+      }
+    }
+
+    // 防抖逻辑：如果不是立即执行，设置延迟
+    if (!immediate && debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+
+    const executeQuery = async () => {
+      console.log(`🚀 Starting query execution for wallet: ${walletAddress}, page: ${currentPage}`);
+      
+      try {
+        setIsQuerying(true);
+        if (!immediate) setLoading(true);
+
+        // 再次检查钱包地址是否仍然有效
+        if (!primaryWallet?.address || primaryWallet.address !== walletAddress) {
+          console.log('⚠️ Wallet changed during query, aborting');
+          return;
+        }
+
+        // 确保已连接到 Linera（使用统一的连接管理）
+        if (!isLineraConnected) {
+          console.log('🔗 Connecting to Linera via unified connection...');
+          await connectToLinera();
+        } else {
+          console.log('🔗 Using existing Linera connection');
+        }
+
+        const query = `query GetQuizSets($limit: Int, $offset: Int) {
+          quizSets(limit: $limit, offset: $offset, sortBy: "created_at", sortDirection: DESC) {
+            id
+            title
+            description
+            creatorNickname
+            startTime
+            endTime
+            mode
+            isStarted
+            participantCount
+          }
+        }`;
+        
+        console.log(`📡 Executing GraphQL query for page ${currentPage}...`);
+        const result = await queryApplication({
+          query,
+          variables: {
+            limit: pageSize,
+            offset: (currentPage - 1) * pageSize,
+          },
+        });
+
+        // 再次检查钱包地址
+        if (!primaryWallet?.address || primaryWallet.address !== walletAddress) {
+          console.log('⚠️ Wallet changed after query, ignoring result');
+          return;
+        }
+
+        if (result.data?.quizSets) {
+          console.log(`✅ Successfully fetched ${result.data.quizSets.length} quizzes`);
+          setAllQuizzes(result.data.quizSets);
+          
+          // 缓存结果
+          setQueryCache(prev => new Map(prev.set(cacheKey, result.data.quizSets)));
+        } else {
+          console.log('ℹ️ No quiz data received');
+        }
+      } catch (err) {
+        console.error('❌ Failed to fetch quizzes:', err);
+      } finally {
+        setIsQuerying(false);
+        if (!immediate) setLoading(false);
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+          setDebounceTimer(null);
+        }
+      }
+    };
+
+    if (immediate) {
+      await executeQuery();
+    } else {
+      // 设置防抖延迟
+      const timer = setTimeout(executeQuery, 500); // 增加防抖时间到500ms
+      setDebounceTimer(timer);
+    }
+  }, [primaryWallet?.address, currentPage, pageSize, isQuerying, queryCache, debounceTimer, generateCacheKey, isLineraConnected, connectToLinera, queryApplication]);
+
+  // 主要查询逻辑 - 钱包变化时立即执行
   useEffect(() => {
     if (primaryWallet?.address) {
-      fetchQuizzes();
+      fetchQuizzes(true); // 立即执行，不防抖
     }
-  }, [primaryWallet?.address, currentPage]);
+  }, [primaryWallet?.address, fetchQuizzes]);
+
+  // 分页变化时防抖执行
+  useEffect(() => {
+    if (primaryWallet?.address && currentPage > 1) {
+      fetchQuizzes(false); // 使用防抖
+    }
+  }, [currentPage, primaryWallet?.address, fetchQuizzes]);
+
+  // 组件卸载时清理
+  useEffect(() => {
+    return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+    };
+  }, [debounceTimer]);
 
   useEffect(() => {
     // Re-process data when search/sort changes

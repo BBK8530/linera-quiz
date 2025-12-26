@@ -214,6 +214,8 @@ const CreateQuizForm: React.FC = () => {
         error('无法获取钱包');
         return;
       }
+      
+      // Connect to Linera, this will reuse existing connection if available
       await lineraAdapter.connect(primaryWallet);
 
       // Set the application if not already set

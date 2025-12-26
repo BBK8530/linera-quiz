@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
-import { lineraAdapter } from '../providers/LineraAdapter';
+import { useConnection } from '../contexts/ConnectionContext';
+// import { useNotifications } from '../contexts/NotificationContext'; // 移除旧的导入
 import {
   FaSignOutAlt,
   FaCog,
@@ -12,57 +13,31 @@ import useNotification from '../hooks/useNotification';
 import NicknameSetting from './NicknameSetting';
 
 const UserInfo: React.FC = () => {
-  const { user, primaryWallet, handleLogOut } = useDynamicContext();
-  const [isLineraConnected, setIsLineraConnected] = useState(false);
-  const [isConnectingLinera, setIsConnectingLinera] = useState(false);
+  const { primaryWallet, handleLogOut } = useDynamicContext();
+  const { 
+    isLineraConnected, 
+    isConnecting, 
+    disconnectFromLinera 
+  } = useConnection();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { success, error, info } = useNotification();
+  const { info } = useNotification();
 
   // 稳定onNicknameSet函数引用
   const handleNicknameSet = useCallback(() => {
     setIsModalOpen(false);
   }, []);
 
-  // 当primaryWallet变化时，自动连接到Linera网络
+  // 监听钱包地址变化，显示连接状态信息
   useEffect(() => {
-    const connectToLinera = async () => {
-      if (!primaryWallet || isLineraConnected || isConnectingLinera) return;
-
-      setIsConnectingLinera(true);
-      try {
-        await lineraAdapter.connect(primaryWallet);
-        await lineraAdapter.setApplication();
-        setIsLineraConnected(true);
-        console.log('✅ Successfully connected to Linera network');
-        success('Successfully connected to Linera Conway network');
-      } catch (err) {
-        console.error('❌ Failed to connect to Linera network:', err);
-        setIsLineraConnected(false);
-        error('Failed to connect to Linera Conway network');
-      } finally {
-        setIsConnectingLinera(false);
-      }
-    };
-
-    if (primaryWallet && user) {
-      connectToLinera();
-    } else {
-      // 当钱包断开连接时，重置Linera连接
-      lineraAdapter.reset();
-      setIsLineraConnected(false);
+    if (!primaryWallet?.address) {
+      info('Please connect your wallet first');
     }
-  }, [
-    primaryWallet,
-    user,
-    isLineraConnected,
-    isConnectingLinera,
-    success,
-    error,
-  ]);
+  }, [primaryWallet?.address, info]);
 
   // Handle logout
   const handleLogout = async () => {
-    lineraAdapter.reset();
+    console.log('🔄 User logging out, disconnecting from Linera');
+    await disconnectFromLinera();
     await handleLogOut();
     info('Logged out successfully');
   };
@@ -79,7 +54,7 @@ const UserInfo: React.FC = () => {
           Conway:{' '}
           {isLineraConnected ? (
             <FaCheckCircle className="connected-icon" />
-          ) : isConnectingLinera ? (
+          ) : isConnecting ? (
             <FaCircleNotch className="connecting-icon spin" />
           ) : (
             <FaTimesCircle className="disconnected-icon" />

@@ -24,6 +24,9 @@ export class LineraAdapter {
   private wasmInitPromise: Promise<unknown> | null = null;
   private connectPromise: Promise<LineraProvider> | null = null;
   private onConnectionChangeCallbacks: Array<() => void> = [];
+  private isConnecting: boolean = false;
+  private currentWalletAddress: string | null = null;
+  private isInitialized: boolean = false;
 
   private constructor() {}
 
@@ -36,17 +39,29 @@ export class LineraAdapter {
     dynamicWallet: DynamicWallet,
     rpcUrl?: string,
   ): Promise<LineraProvider> {
-    if (this.provider) return this.provider;
-    if (this.connectPromise) return this.connectPromise;
+    const walletAddress = dynamicWallet.address;
+    
+    // 如果已经有连接且是同一个钱包，直接返回
+    if (this.provider && this.currentWalletAddress === walletAddress) {
+      console.log('🔗 Already connected to Linera with same wallet, reusing existing connection');
+      return this.provider;
+    }
+    
+    // 如果正在连接中，等待现有的连接
+    if (this.connectPromise) {
+      console.log('🔗 Connection in progress, waiting...');
+      return this.connectPromise;
+    }
 
     if (!dynamicWallet) {
       throw new Error('Dynamic wallet is required for Linera connection');
     }
 
     try {
+      this.isConnecting = true;
+      this.currentWalletAddress = walletAddress;
       this.connectPromise = (async () => {
-        const { address } = dynamicWallet;
-        console.log('🔗 Connecting with Dynamic wallet:', address);
+        console.log('🔗 Connecting with Dynamic wallet:', walletAddress);
 
         try {
           if (!this.wasmInitPromise) this.wasmInitPromise = initLinera();
@@ -65,7 +80,7 @@ export class LineraAdapter {
 
         const faucet = await new Faucet(rpcUrl || LINERA_RPC_URL);
         const wallet = await faucet.createWallet();
-        const chainId = await faucet.claimChain(wallet, address);
+        const chainId = await faucet.claimChain(wallet, walletAddress);
 
         const signer = await new DynamicSigner(dynamicWallet);
         const client = await new Client(wallet, signer, false);
@@ -76,13 +91,14 @@ export class LineraAdapter {
           wallet,
           faucet,
           chainId,
-          address: dynamicWallet.address,
+          address: walletAddress,
         };
+        
+        this.isInitialized = true;
 
         // 触发所有连接状态变化回调
         this.onConnectionChangeCallbacks.forEach(callback => callback());
-        // 连接成功后清除connectPromise，避免内存泄漏
-        this.connectPromise = null;
+        
         return this.provider;
       })();
 
@@ -90,13 +106,19 @@ export class LineraAdapter {
       return provider;
     } catch (error) {
       console.error('Failed to connect to Linera:', error);
-      // 只有在连接失败时才清除connectPromise
-      this.connectPromise = null;
+      // 连接失败时清理状态
+      this.currentWalletAddress = null;
+      this.provider = null;
+      this.application = null;
       throw new Error(
         `Failed to connect to Linera network: ${
           error instanceof Error ? error.message : 'Unknown error'
         }`,
       );
+    } finally {
+      // 连接完成后清除状态
+      this.connectPromise = null;
+      this.isConnecting = false;
     }
   }
 
@@ -201,11 +223,31 @@ export class LineraAdapter {
   }
 
   reset(): void {
+    console.log('🔄 Resetting Linera connection');
     this.application = null;
     this.provider = null;
     this.connectPromise = null;
+    this.currentWalletAddress = null;
+    this.isConnecting = false;
+    this.isInitialized = false;
     // 触发所有连接状态变化回调
     this.onConnectionChangeCallbacks.forEach(callback => callback());
+  }
+
+  isConnectedWithWallet(walletAddress: string): boolean {
+    return this.provider !== null && 
+           this.currentWalletAddress === walletAddress && 
+           this.isInitialized;
+  }
+
+  getConnectionStatus(): 'disconnected' | 'connecting' | 'connected' {
+    if (this.isConnecting || this.connectPromise) {
+      return 'connecting';
+    }
+    if (this.provider && this.isInitialized) {
+      return 'connected';
+    }
+    return 'disconnected';
   }
 }
 

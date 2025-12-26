@@ -1,19 +1,21 @@
 import { ApolloProvider } from '@apollo/client/react';
 import { DynamicWalletProvider } from './providers/DynamicWalletProvider';
 import { client } from './apollo/index';
-import LoginButton from './components/LoginButton';
 import UserInfo from './components/UserInfo';
 import QuizList from './components/QuizList';
-import MyQuizzes from './components/MyQuizzes';
+
 import CreateQuizForm from './components/CreateQuizForm';
 import QuizTakingPage from './components/QuizTakingPage';
 import GlobalRankings from './components/GlobalRankings';
 import QuizRankings from './components/QuizRankings';
+import WalletConnectionScreen from './components/WalletConnectionScreen';
+import LoadingScreen from './components/LoadingScreen';
 import { BrowserRouter, Routes, Route, Link, Outlet } from 'react-router-dom';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
 import NotificationProvider from './components/NotificationContext';
 import NotificationContainer from './components/NotificationContainer';
 import ConnectionProvider from './contexts/ConnectionContext';
+import { useConnection } from './contexts/ConnectionContext';
 import './App.css';
 
 // 创建Header组件
@@ -27,22 +29,60 @@ const Header: React.FC = () => {
           <h1>Quiz Challenge</h1>
         </Link>
         <nav className="main-nav">
-          <Link to="/" className="nav-link">
-            All Quizzes
-          </Link>
-          <Link to="/my-quizzes" className="nav-link">
-            My Quizzes
+          <Link to="/quizzes" className="nav-link">
+            Quizzes
           </Link>
           <Link to="/create" className="nav-link">
-            Create Quiz
+            Create
           </Link>
           <Link to="/rankings" className="nav-link">
-            Leadboard
+            Leaderboard
           </Link>
         </nav>
-        {user && primaryWallet ? <UserInfo /> : <LoginButton />}
+        {user && primaryWallet && <UserInfo />}
       </div>
     </header>
+  );
+};
+
+// 创建受保护的路由组件
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const { primaryWallet } = useDynamicContext();
+  const { isLineraConnected, isConnecting } = useConnection();
+
+  // 如果正在连接中，显示加载屏幕
+  if (isConnecting) {
+    return <LoadingScreen />;
+  }
+
+  // 如果钱包未连接或Linera未连接，显示钱包连接屏幕
+  if (!primaryWallet?.address || !isLineraConnected) {
+    return <WalletConnectionScreen />;
+  }
+
+  // 否则显示受保护的内容
+  return <>{children}</>;
+};
+
+// 创建首页组件
+const HomePage: React.FC = () => {
+  return (
+    <div className="home-page">
+      <div className="home-content">
+        <h2>Welcome to Quiz Challenge</h2>
+        <p>Test your knowledge, create quizzes, and compete with others!</p>
+        <div className="home-actions">
+          <Link to="/quizzes" className="btn-primary">
+            Browse Quizzes
+          </Link>
+          <Link to="/create" className="btn-secondary">
+            Create Your Quiz
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -91,87 +131,89 @@ const Layout: React.FC = () => {
 
 function App() {
   return (
-    <DynamicWalletProvider>
-      <ApolloProvider client={client}>
-        <NotificationProvider>
-          <ConnectionProvider>
-            <BrowserRouter>
+    <BrowserRouter>
+      <DynamicWalletProvider>
+        <ApolloProvider client={client}>
+          <NotificationProvider>
+            <ConnectionProvider>
               <Routes>
                 <Route path="/" element={<Layout />}>
+                  {/* 根路径显示首页内容 */}
+                  <Route index element={<HomePage />} />
+                  {/* 为QuizList添加专用路由 */}
                   <Route
-                    index
+                    path="/quizzes"
                     element={
-                      <div className="content-wrapper">
-                        <div className="content-header">
-                          <h2>All Quizzes</h2>
+                      <ProtectedRoute>
+                        <div className="content-wrapper">
+                          <div className="content-header">
+                            <h2>All Quizzes</h2>
+                          </div>
+                          <QuizList />
                         </div>
-                        <QuizList />
-                      </div>
-                    }
-                  />
-                  <Route
-                    path="/my-quizzes"
-                    element={
-                      <div className="content-wrapper">
-                        <div className="content-header">
-                          <h2>My Quizzes</h2>
-                        </div>
-                        <MyQuizzes />
-                      </div>
+                      </ProtectedRoute>
                     }
                   />
                   <Route
                     path="/create"
                     element={
-                      <div className="content-wrapper">
-                        <div className="content-header">
-                          <h2>Create Quiz</h2>
+                      <ProtectedRoute>
+                        <div className="content-wrapper">
+                          <div className="content-header">
+                            <h2>Create Quiz</h2>
+                          </div>
+                          <CreateQuizForm />
                         </div>
-                        <CreateQuizForm />
-                      </div>
+                      </ProtectedRoute>
                     }
                   />
                   <Route
                     path="/quiz/:quizId"
                     element={
-                      <div className="content-wrapper">
-                        <div className="content-header">
-                          <h2>Take Quiz</h2>
+                      <ProtectedRoute>
+                        <div className="content-wrapper">
+                          <div className="content-header">
+                            <h2>Take Quiz</h2>
+                          </div>
+                          <QuizTakingPage />
                         </div>
-                        <QuizTakingPage />
-                      </div>
+                      </ProtectedRoute>
                     }
                   />
                   <Route
                     path="/quiz-rank/:quizId"
                     element={
-                      <div className="content-wrapper">
-                        <div className="content-header">
-                          <h2>Quiz Rankings</h2>
+                      <ProtectedRoute>
+                        <div className="content-wrapper">
+                          <div className="content-header">
+                            <h2>Quiz Rankings</h2>
+                          </div>
+                          <QuizRankings />
                         </div>
-                        <QuizRankings />
-                      </div>
+                      </ProtectedRoute>
                     }
                   />
                   <Route
                     path="/rankings"
                     element={
-                      <div className="content-wrapper">
-                        <div className="content-header">
-                          <h2>Leadboard</h2>
+                      <ProtectedRoute>
+                        <div className="content-wrapper">
+                          <div className="content-header">
+                            <h2>Leadboard</h2>
+                          </div>
+                          <GlobalRankings />
                         </div>
-                        <GlobalRankings />
-                      </div>
+                      </ProtectedRoute>
                     }
                   />
                 </Route>
               </Routes>
               <NotificationContainer />
-            </BrowserRouter>
-          </ConnectionProvider>
-        </NotificationProvider>
-      </ApolloProvider>
-    </DynamicWalletProvider>
+            </ConnectionProvider>
+          </NotificationProvider>
+        </ApolloProvider>
+      </DynamicWalletProvider>
+    </BrowserRouter>
   );
 }
 

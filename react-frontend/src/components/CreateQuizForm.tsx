@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
-import { lineraAdapter } from '../providers/LineraAdapter';
+import { useConnection } from '../contexts/ConnectionContext';
 import useNotification from '../hooks/useNotification';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,6 +31,7 @@ const CreateQuizForm: React.FC = () => {
   ]);
 
   const { user, primaryWallet } = useDynamicContext();
+  const { connectToLinera, queryApplication } = useConnection();
   const [loading, setLoading] = useState(false);
   const { success, error } = useNotification();
   const navigate = useNavigate();
@@ -209,19 +210,8 @@ const CreateQuizForm: React.FC = () => {
 
     try {
       setLoading(true);
-      // Connect to Linera with the primary wallet
-      if (!primaryWallet) {
-        error('无法获取钱包');
-        return;
-      }
-      
-      // Connect to Linera, this will reuse existing connection if available
-      await lineraAdapter.connect(primaryWallet);
-
-      // Set the application if not already set
-      if (!lineraAdapter.isApplicationSet()) {
-        await lineraAdapter.setApplication();
-      }
+      // Connect to Linera using ConnectionContext
+      await connectToLinera();
 
       // Convert time to millisecond timestamp string
       const startTimestamp = startDate.getTime().toString();
@@ -237,8 +227,8 @@ const CreateQuizForm: React.FC = () => {
         id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
       }));
 
-      // Use Linera SDK for mutation
-      await lineraAdapter.queryApplication({
+      // Use Linera SDK for mutation via ConnectionContext
+      await queryApplication({
         query: `mutation {
           createQuiz(
             field0: {

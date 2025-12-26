@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { lineraAdapter } from '../providers/LineraAdapter';
-import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
+import { useConnection } from '../contexts/ConnectionContext';
 
 interface Quiz {
   id: string;
@@ -31,7 +30,7 @@ interface Ranking {
 const QuizRankings: React.FC = () => {
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
-  const { primaryWallet } = useDynamicContext();
+  const { queryApplication, onNewBlock, offNewBlock } = useConnection();
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [rankings, setRankings] = useState<Ranking[]>([]);
@@ -47,17 +46,9 @@ const QuizRankings: React.FC = () => {
 
   // Fetch quiz details
   const fetchQuizDetails = useCallback(async () => {
-    if (!quizId || !primaryWallet?.address) return;
+    if (!quizId) return;
 
     try {
-      // Connect to Linera if not already connected
-      await lineraAdapter.connect(primaryWallet);
-
-      // Set application if not already set
-      if (!lineraAdapter.isApplicationSet()) {
-        await lineraAdapter.setApplication();
-      }
-
       // Fetch quiz details
       const quizQuery = `
         query GetQuiz($quizId: String!) {
@@ -81,15 +72,20 @@ const QuizRankings: React.FC = () => {
         }
       `;
 
-      const quizResult = await lineraAdapter.queryApplication<{
-        data: { quiz: Quiz };
-      }>({
+      const quizResult = await queryApplication({
         query: quizQuery,
         variables: { quizId },
       });
 
-      if (quizResult.data?.quiz) {
-        setQuiz(quizResult.data.quiz);
+      if (
+        quizResult &&
+        typeof quizResult === 'object' &&
+        'data' in quizResult &&
+        quizResult.data &&
+        typeof quizResult.data === 'object' &&
+        'quiz' in quizResult.data
+      ) {
+        setQuiz(quizResult.data.quiz as Quiz);
       } else {
         setError('Quiz not found');
       }
@@ -97,21 +93,13 @@ const QuizRankings: React.FC = () => {
       console.error('Failed to fetch quiz details:', err);
       setError('Failed to fetch quiz details');
     }
-  }, [quizId, primaryWallet]);
+  }, [quizId, queryApplication]);
 
   // Fetch quiz rankings
   const fetchQuizRankings = useCallback(async () => {
-    if (!quizId || !primaryWallet?.address) return;
+    if (!quizId) return;
 
     try {
-      // Connect to Linera if not already connected
-      await lineraAdapter.connect(primaryWallet);
-
-      // Set application if not already set
-      if (!lineraAdapter.isApplicationSet()) {
-        await lineraAdapter.setApplication();
-      }
-
       const rankingsQuery = `
         query GetQuizRankings($quizId: String!) {
           quizRankings(quizId: $quizId) {
@@ -123,15 +111,20 @@ const QuizRankings: React.FC = () => {
         }
       `;
 
-      const rankingsResult = await lineraAdapter.queryApplication<{
-        data: { quizRankings: Ranking[] };
-      }>({
+      const rankingsResult = await queryApplication({
         query: rankingsQuery,
         variables: { quizId },
       });
 
-      if (rankingsResult.data?.quizRankings) {
-        setRankings(rankingsResult.data.quizRankings);
+      if (
+        rankingsResult &&
+        typeof rankingsResult === 'object' &&
+        'data' in rankingsResult &&
+        rankingsResult.data &&
+        typeof rankingsResult.data === 'object' &&
+        'quizRankings' in rankingsResult.data
+      ) {
+        setRankings(rankingsResult.data.quizRankings as Ranking[]);
       }
     } catch (err) {
       console.error('Failed to fetch quiz rankings:', err);
@@ -139,8 +132,26 @@ const QuizRankings: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [quizId, primaryWallet]);
+  }, [quizId, queryApplication]);
 
+  // Handle new block event - refresh data
+  const handleNewBlock = useCallback(() => {
+    console.log(
+      '🔄 New block received, refreshing quiz details and rankings...',
+    );
+    fetchQuizDetails();
+    fetchQuizRankings();
+  }, [fetchQuizDetails, fetchQuizRankings]);
+
+  // Register new block listener
+  useEffect(() => {
+    onNewBlock(handleNewBlock);
+    return () => {
+      offNewBlock(handleNewBlock);
+    };
+  }, [onNewBlock, offNewBlock, handleNewBlock]);
+
+  // Initial data fetch
   useEffect(() => {
     fetchQuizDetails();
     fetchQuizRankings();

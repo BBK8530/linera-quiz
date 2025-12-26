@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { lineraAdapter } from '../providers/LineraAdapter';
+import { useConnection } from '../contexts/ConnectionContext';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
 
 interface UserRanking {
@@ -12,6 +12,8 @@ interface UserRanking {
 
 const GlobalRankings: React.FC = () => {
   const { primaryWallet } = useDynamicContext();
+  const { connectToLinera, queryApplication, onNewBlock, offNewBlock } =
+    useConnection();
 
   const [rankings, setRankings] = useState<UserRanking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,19 +26,12 @@ const GlobalRankings: React.FC = () => {
 
   // Fetch global rankings
   const fetchGlobalRankings = useCallback(async () => {
-    if (!primaryWallet?.address) return;
-
     try {
       setLoading(true);
       setError(null);
 
-      // Connect to Linera if not already connected
-      await lineraAdapter.connect(primaryWallet);
-
-      // Set application if not already set
-      if (!lineraAdapter.isApplicationSet()) {
-        await lineraAdapter.setApplication();
-      }
+      // Ensure connected to Linera
+      await connectToLinera();
 
       // Fetch global rankings
       const query = `
@@ -51,11 +46,9 @@ const GlobalRankings: React.FC = () => {
         }
       `;
 
-      const result = await lineraAdapter.queryApplication<{
-        data: { globalRankings: UserRanking[] };
-      }>({
+      const result = (await queryApplication({
         query,
-      });
+      })) as { data?: { globalRankings: UserRanking[] } };
 
       if (result.data?.globalRankings) {
         setRankings(result.data.globalRankings);
@@ -66,11 +59,28 @@ const GlobalRankings: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [primaryWallet]);
+  }, [connectToLinera, queryApplication]);
 
-  useEffect(() => {
+  // Handle new block event - refresh global rankings
+  const handleNewBlock = useCallback(() => {
+    console.log('🔄 New block received, refreshing global rankings...');
     fetchGlobalRankings();
   }, [fetchGlobalRankings]);
+
+  // Register new block listener
+  useEffect(() => {
+    onNewBlock(handleNewBlock);
+    return () => {
+      offNewBlock(handleNewBlock);
+    };
+  }, [onNewBlock, offNewBlock, handleNewBlock]);
+
+  // Initial data fetch when wallet is connected
+  useEffect(() => {
+    if (primaryWallet?.address) {
+      fetchGlobalRankings();
+    }
+  }, [primaryWallet?.address, fetchGlobalRankings]);
 
   // Sort rankings
   const sortedRankings = [...rankings].sort((a, b) => {

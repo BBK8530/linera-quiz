@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
 import { useConnection } from '../contexts/ConnectionContext';
+import { useNavigate } from 'react-router-dom';
 
 interface Question {
   id: string;
@@ -30,7 +31,9 @@ interface User {
 
 const MyQuizzes: React.FC = () => {
   const { primaryWallet } = useDynamicContext();
-  const { isLineraConnected, connectToLinera, queryApplication } = useConnection();
+  const { connectToLinera, queryApplication, onNewBlock, offNewBlock } =
+    useConnection();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,6 +42,10 @@ const MyQuizzes: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [hasFetchedUser, setHasFetchedUser] = useState(false);
+
+  // Add query state tracking using useRef to avoid function re-creation
+  const isQueryingRef = useRef(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const pageSize = 6;
   const sortOptions = [
@@ -51,15 +58,14 @@ const MyQuizzes: React.FC = () => {
   const fetchUserData = useCallback(async () => {
     if (!primaryWallet?.address) return;
 
-    // Only fetch if connected
-    if (!isLineraConnected) {
-      return;
-    }
-
     // Only fetch if not already fetched
     if (hasFetchedUser) return;
 
-    const query = `
+    try {
+      // Ensure connected to Linera
+      await connectToLinera();
+
+      const query = `
         query GetUser($walletAddress: String!) {
           user(walletAddress: $walletAddress) {
             nickname
@@ -69,21 +75,25 @@ const MyQuizzes: React.FC = () => {
         }
       `;
 
-    const variables = {
-      walletAddress: primaryWallet.address.toLowerCase(),
-    };
+      const variables = {
+        walletAddress: primaryWallet.address.toLowerCase(),
+      };
 
-    try {
-      const result = await queryApplication({
+      const result = (await queryApplication({
         query,
         variables,
-      }) as { data: { user: User } };
+      })) as { data: { user: User } };
       setUser(result.data.user);
       setHasFetchedUser(true);
     } catch (err) {
-      console.error('Failed to fetch user data:', err);
+      // Silent error handling to avoid console noise
     }
-  }, [primaryWallet?.address, hasFetchedUser, isLineraConnected, queryApplication]);
+  }, [
+    primaryWallet?.address,
+    hasFetchedUser,
+    connectToLinera,
+    queryApplication,
+  ]);
 
   // Process quiz data with search and sorting
   const processQuizData = useCallback(
@@ -126,38 +136,76 @@ const MyQuizzes: React.FC = () => {
   );
 
   // Fetch quizzes using unified connection management
-  const fetchQuizzes = useCallback(async () => {
-    if (!primaryWallet?.address) return;
+  const fetchQuizzes = useCallback(
+    async (immediate = false) => {
+      const walletAddress = primaryWallet?.address;
+      if (!walletAddress) return;
 
-    try {
-      setLoading(true);
+      // Strict check: if already querying, return immediately
+      if (isQueryingRef.current) {
+        if (loading) {
+          setLoading(false);
+        }
+        return;
+      }
 
-      // Ensure connected to Linera (using unified connection management)
-      if (!isLineraConnected) {
-        console.log('🔗 Connecting to Linera via unified connection...');
-        await connectToLinera();
+      // Debounce logic: if not immediate, set delay
+      if (!immediate && debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+
+      const executeQuery = async () => {
+        try {
+          isQueryingRef.current = true;
+          setLoading(true);
+
+          // Ensure wallet address is still valid
+          if (
+            !primaryWallet?.address ||
+            primaryWallet.address !== walletAddress
+          ) {
+            setLoading(false);
+            isQueryingRef.current = false;
+            return;
+          }
+
+          // Ensure connected to Linera
+          await connectToLinera();
+
+          const result = (await queryApplication({
+            query: `query { quizSet { id title description duration creatorNickname isStarted isEnded registeredCount questions { id text options correctAnswer } createdAt } }`,
+          })) as { data: { quizSet: Quiz[] } };
+
+          if (result.data?.quizSet) {
+            setAllQuizzes(result.data.quizSet);
+          }
+        } catch (err) {
+          // Silent error handling to avoid console noise
+        } finally {
+          isQueryingRef.current = false;
+          setLoading(false);
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+          }
+        }
+      };
+
+      if (immediate) {
+        await executeQuery();
       } else {
-        console.log('🔗 Using existing Linera connection');
+        // Set debounce delay
+        const timer = setTimeout(executeQuery, 500);
+        debounceTimerRef.current = timer;
       }
-
-      const result = await queryApplication({
-        query: `query { quizSet { id title description duration creatorNickname isStarted isEnded registeredCount questions { id text options correctAnswer } createdAt } }`,
-      }) as { data: { quizSet: Quiz[] } };
-
-      if (result.data?.quizSet) {
-        setAllQuizzes(result.data.quizSet);
-      }
-    } catch (err) {
-      console.error('Failed to fetch quizzes:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [primaryWallet, isLineraConnected, connectToLinera, queryApplication]);
+    },
+    [primaryWallet?.address, connectToLinera, queryApplication, loading],
+  );
 
   useEffect(() => {
     if (primaryWallet?.address) {
       fetchUserData();
-      fetchQuizzes();
+      fetchQuizzes(true); // Immediate execution on wallet change
     }
   }, [primaryWallet?.address, fetchUserData, fetchQuizzes]);
 
@@ -167,6 +215,32 @@ const MyQuizzes: React.FC = () => {
       processQuizData(allQuizzes);
     }
   }, [searchTerm, sortBy, user?.nickname, allQuizzes, processQuizData]);
+
+  // Component cleanup
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // 定义新区块事件处理函数
+  const handleNewBlock = useCallback(() => {
+    // 重新获取用户的测验数据
+    fetchQuizzes(true);
+  }, [fetchQuizzes]);
+
+  // 注册新区块事件监听器，当收到新区块时刷新用户的测验列表
+  useEffect(() => {
+    // 注册新区块事件回调
+    onNewBlock(handleNewBlock);
+
+    // 组件卸载时注销回调
+    return () => {
+      offNewBlock(handleNewBlock);
+    };
+  }, [onNewBlock, offNewBlock, handleNewBlock]);
 
   const formatDate = (timestamp: string) => {
     try {
@@ -286,9 +360,7 @@ const MyQuizzes: React.FC = () => {
               <div className="quiz-actions">
                 <button
                   className="action-button primary"
-                  onClick={() =>
-                    (window.location.href = `/quiz-rank/${quiz.id}`)
-                  }
+                  onClick={() => navigate(`/quiz-rank/${quiz.id}`)}
                 >
                   View Rankings
                 </button>

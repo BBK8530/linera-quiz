@@ -1,52 +1,47 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
 import { useConnection } from '../contexts/ConnectionContext';
+import { useNavigate } from 'react-router-dom';
 
-interface Question {
-  id: string;
-  text: string;
-  options: string[];
-  correctAnswer: string;
-}
-
-interface Quiz {
+// 添加接口定义
+interface QuizSet {
   id: string;
   title: string;
   description: string;
-  duration: number;
   creatorNickname: string;
+  startTime: string;
+  endTime: string;
+  mode: string;
   isStarted: boolean;
-  isEnded: boolean;
-  registeredCount: number;
-  questions: Question[];
-  createdAt: string;
+  participantCount: number;
+  questions: { id: string }[];
 }
 
 const QuizList: React.FC = () => {
   const { primaryWallet } = useDynamicContext();
-  const { isLineraConnected, connectToLinera, queryApplication } = useConnection();
+  const { queryApplication, onNewBlock, offNewBlock } = useConnection();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [currentPage, setCurrentPage] = useState(1);
-  const [allQuizzes, setAllQuizzes] = useState<Quiz[]>([]);
-  const [filteredQuizzes, setFilteredQuizzes] = useState<Quiz[]>([]);
+  const [allQuizzes, setAllQuizzes] = useState<QuizSet[]>([]);
+  const [filteredQuizzes, setFilteredQuizzes] = useState<QuizSet[]>([]);
   const [loading, setLoading] = useState(false);
-  
-  // 新增：查询去重和防抖相关状态
-  const [isQuerying, setIsQuerying] = useState(false);
-  const [queryCache, setQueryCache] = useState<Map<string, Quiz[]>>(new Map());
-  const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+
+  // 新增：查询去重相关状态 - 使用useRef避免函数重新创建
+  const isQueryingRef = useRef(false);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const pageSize = 6;
   const sortOptions = [
-    { value: 'createdAt', label: 'Recently Created' },
-    { value: 'title', label: 'Sort by Title' },
-    { value: 'questions', label: 'Number of Questions' },
+    { value: 'createdAt', label: '最近创建' },
+    { value: 'title', label: '按标题排序' },
+    { value: 'questions', label: '按问题数量排序' },
   ];
 
   // Process quiz data with search and sorting
   const processQuizData = useCallback(
-    (quizzes: Quiz[]) => {
+    (quizzes: QuizSet[]) => {
       let processed = [...quizzes];
 
       // Search functionality
@@ -62,7 +57,9 @@ const QuizList: React.FC = () => {
       // Sort functionality
       processed.sort((a, b) => {
         if (sortBy === 'createdAt') {
-          return Number(b.createdAt) - Number(a.createdAt);
+          // 使用 startTime 代替 createdAt 进行排序
+          // 时间戳为微秒，直接比较数值即可
+          return Number(b.startTime) - Number(a.startTime);
         } else if (sortBy === 'title') {
           return a.title.localeCompare(b.title);
         } else if (sortBy === 'questions') {
@@ -76,65 +73,44 @@ const QuizList: React.FC = () => {
     [searchTerm, sortBy],
   );
 
-  // 生成查询缓存键
-  const generateCacheKey = useCallback((walletAddress: string, page: number, limit: number) => {
-    return `${walletAddress}_page_${page}_limit_${limit}`;
-  }, []);
-
   // Fetch quizzes with strict deduplication and debouncing
-  const fetchQuizzes = useCallback(async (immediate = false) => {
-    const walletAddress = primaryWallet?.address;
-    if (!walletAddress) {
-      console.log('⏭️ No wallet address, skipping query');
-      return;
-    }
-
-    // 生成缓存键
-    const cacheKey = generateCacheKey(walletAddress, currentPage, pageSize);
-    
-    // 严格检查：是否已在查询中
-    if (isQuerying) {
-      console.log('🔄 Query already in progress, skipping...');
-      return;
-    }
-
-    // 严格检查：缓存命中
-    if (queryCache.has(cacheKey)) {
-      console.log('📋 Using cached quiz data for key:', cacheKey);
-      const cachedData = queryCache.get(cacheKey);
-      if (cachedData) {
-        setAllQuizzes(cachedData);
+  const fetchQuizzes = useCallback(
+    async (immediate = false) => {
+      const walletAddress = primaryWallet?.address;
+      if (!walletAddress) {
         return;
       }
-    }
 
-    // 防抖逻辑：如果不是立即执行，设置延迟
-    if (!immediate && debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-
-    const executeQuery = async () => {
-      console.log(`🚀 Starting query execution for wallet: ${walletAddress}, page: ${currentPage}`);
-      
-      try {
-        setIsQuerying(true);
-        if (!immediate) setLoading(true);
-
-        // 再次检查钱包地址是否仍然有效
-        if (!primaryWallet?.address || primaryWallet.address !== walletAddress) {
-          console.log('⚠️ Wallet changed during query, aborting');
-          return;
+      // 严格检查：是否已在查询中
+      if (isQueryingRef.current) {
+        // 如果已经在查询中，但当前loading状态为true，重置它
+        if (loading) {
+          setLoading(false);
         }
+        return;
+      }
 
-        // 确保已连接到 Linera（使用统一的连接管理）
-        if (!isLineraConnected) {
-          console.log('🔗 Connecting to Linera via unified connection...');
-          await connectToLinera();
-        } else {
-          console.log('🔗 Using existing Linera connection');
-        }
+      // 防抖逻辑：如果不是立即执行，设置延迟
+      if (!immediate && debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
 
-        const query = `query GetQuizSets($limit: Int, $offset: Int) {
+      const executeQuery = async () => {
+        try {
+          isQueryingRef.current = true;
+          if (!immediate) setLoading(true);
+
+          // 再次检查钱包地址是否仍然有效
+          if (
+            !primaryWallet?.address ||
+            primaryWallet.address !== walletAddress
+          ) {
+            setLoading(false);
+            isQueryingRef.current = false;
+            return;
+          }
+
+          const query = `query GetQuizSets($limit: Int, $offset: Int) {
           quizSets(limit: $limit, offset: $offset, sortBy: "created_at", sortDirection: DESC) {
             id
             title
@@ -145,53 +121,59 @@ const QuizList: React.FC = () => {
             mode
             isStarted
             participantCount
+            questions {
+              id
+            }
           }
         }`;
-        
-        console.log(`📡 Executing GraphQL query for page ${currentPage}...`);
-        const result = await queryApplication({
-          query,
-          variables: {
-            limit: pageSize,
-            offset: (currentPage - 1) * pageSize,
-          },
-        });
 
-        // 再次检查钱包地址
-        if (!primaryWallet?.address || primaryWallet.address !== walletAddress) {
-          console.log('⚠️ Wallet changed after query, ignoring result');
-          return;
-        }
+          const result = (await queryApplication({
+            query,
+            variables: {
+              limit: pageSize,
+              offset: (currentPage - 1) * pageSize,
+            },
+          })) as { data?: { quizSets: QuizSet[] } };
 
-        if (result.data?.quizSets) {
-          console.log(`✅ Successfully fetched ${result.data.quizSets.length} quizzes`);
-          setAllQuizzes(result.data.quizSets);
-          
-          // 缓存结果
-          setQueryCache(prev => new Map(prev.set(cacheKey, result.data.quizSets)));
-        } else {
-          console.log('ℹ️ No quiz data received');
+          // 再次检查钱包地址
+          if (
+            !primaryWallet?.address ||
+            primaryWallet.address !== walletAddress
+          ) {
+            setLoading(false);
+            isQueryingRef.current = false;
+            return;
+          }
+
+          if (result.data?.quizSets) {
+            const quizSets = result.data.quizSets;
+            setAllQuizzes(quizSets);
+          } else {
+          }
+        } catch (err) {
+          // 静默处理错误，避免控制台噪音
+        } finally {
+          isQueryingRef.current = false;
+          // 无论是否立即执行，都重置loading状态
+          // 确保在所有情况下loading状态都能正确退出
+          setLoading(false);
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+          }
         }
-      } catch (err) {
-        console.error('❌ Failed to fetch quizzes:', err);
-      } finally {
-        setIsQuerying(false);
-        if (!immediate) setLoading(false);
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-          setDebounceTimer(null);
-        }
+      };
+
+      if (immediate) {
+        await executeQuery();
+      } else {
+        // 设置防抖延迟
+        const timer = setTimeout(executeQuery, 500); // 增加防抖时间到500ms
+        debounceTimerRef.current = timer;
       }
-    };
-
-    if (immediate) {
-      await executeQuery();
-    } else {
-      // 设置防抖延迟
-      const timer = setTimeout(executeQuery, 500); // 增加防抖时间到500ms
-      setDebounceTimer(timer);
-    }
-  }, [primaryWallet?.address, currentPage, pageSize, isQuerying, queryCache, debounceTimer, generateCacheKey, isLineraConnected, connectToLinera, queryApplication]);
+    },
+    [primaryWallet?.address, currentPage, pageSize, queryApplication],
+  );
 
   // 主要查询逻辑 - 钱包变化时立即执行
   useEffect(() => {
@@ -202,7 +184,7 @@ const QuizList: React.FC = () => {
 
   // 分页变化时防抖执行
   useEffect(() => {
-    if (primaryWallet?.address && currentPage > 1) {
+    if (primaryWallet?.address) {
       fetchQuizzes(false); // 使用防抖
     }
   }, [currentPage, primaryWallet?.address, fetchQuizzes]);
@@ -210,11 +192,28 @@ const QuizList: React.FC = () => {
   // 组件卸载时清理
   useEffect(() => {
     return () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [debounceTimer]);
+  }, []);
+
+  // 定义新区块事件处理函数
+  const handleNewBlock = useCallback(() => {
+    // 重新获取测验数据
+    fetchQuizzes(true);
+  }, [fetchQuizzes]);
+
+  // 注册新区块事件监听器，当收到新区块时刷新测验列表
+  useEffect(() => {
+    // 注册新区块事件回调
+    onNewBlock(handleNewBlock);
+
+    // 组件卸载时注销回调
+    return () => {
+      offNewBlock(handleNewBlock);
+    };
+  }, [onNewBlock, offNewBlock, handleNewBlock]);
 
   useEffect(() => {
     // Re-process data when search/sort changes
@@ -226,7 +225,13 @@ const QuizList: React.FC = () => {
   const formatDate = (timestamp: string) => {
     try {
       const date = new Date(Number(timestamp) / 1000); // Convert from microseconds to milliseconds
-      return date.toLocaleDateString('en-US');
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
     } catch {
       return 'Invalid date';
     }
@@ -237,11 +242,10 @@ const QuizList: React.FC = () => {
     navigator.clipboard
       .writeText(link)
       .then(() => {
-        alert('Quiz link copied to clipboard!');
+        alert('测验链接已复制到剪贴板！');
       })
       .catch(err => {
-        console.error('Failed to copy link: ', err);
-        alert(`Failed to copy link. Please try again: ${link}`);
+        alert(`复制链接失败，请重试: ${link}`);
       });
   };
 
@@ -264,16 +268,13 @@ const QuizList: React.FC = () => {
           </div>
         </div>
         <div className="quiz-grid">
-          {Array(6)
+          {Array(3)
             .fill(0)
             .map((_, i) => (
               <div key={i} className="quiz-card skeleton skeleton-card">
                 <div className="skeleton-title"></div>
                 <div className="skeleton-text"></div>
                 <div className="skeleton-text"></div>
-                <div className="skeleton-text"></div>
-                <div className="skeleton-text"></div>
-                <div className="skeleton-button"></div>
               </div>
             ))}
         </div>
@@ -293,7 +294,7 @@ const QuizList: React.FC = () => {
         <div className="search-bar">
           <input
             type="text"
-            placeholder="Search all quizzes..."
+            placeholder="搜索所有测验..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="search-input"
@@ -317,41 +318,59 @@ const QuizList: React.FC = () => {
       {/* Quiz Grid */}
       {paginatedQuizzes.length > 0 ? (
         <div className="quiz-grid">
-          {paginatedQuizzes.map((quiz: Quiz) => (
+          {paginatedQuizzes.map((quiz: QuizSet) => (
             <div key={quiz.id} className="quiz-card">
               <h3>{quiz.title}</h3>
               <p className="quiz-description">{quiz.description}</p>
               <div className="quiz-meta">
                 <span className="meta-item">
-                  <strong>Questions:</strong> {quiz.questions.length}
+                  <strong>创建者:</strong> {quiz.creatorNickname}
                 </span>
                 <span className="meta-item">
-                  <strong>Created at:</strong> {formatDate(quiz.createdAt)}
+                  <strong>模式:</strong> {quiz.mode}
+                </span>
+                <span className="meta-item">
+                  <strong>问题数量:</strong> {quiz.questions.length}
+                </span>
+                <span className="meta-item">
+                  <strong>参与者:</strong> {quiz.participantCount}
+                </span>
+                <span className="meta-item">
+                  <strong>开始时间:</strong> {formatDate(quiz.startTime)}
+                </span>
+                <span className="meta-item">
+                  <strong>结束时间:</strong> {formatDate(quiz.endTime)}
                 </span>
               </div>
               <div className="quiz-status">
-                {quiz.isEnded && <span className="status ended">已结束</span>}
-                {quiz.isStarted && !quiz.isEnded && (
-                  <span className="status started">进行中</span>
+                {/* 根据 isStarted 和 endTime 判断状态 */}
+                {new Date() > new Date(Number(quiz.endTime) / 1000) && (
+                  <span className="status ended">已结束</span>
                 )}
-                {!quiz.isStarted && !quiz.isEnded && (
-                  <span className="status pending">待开始</span>
-                )}
+                {quiz.isStarted &&
+                  new Date() <= new Date(Number(quiz.endTime) / 1000) && (
+                    <span className="status started">进行中</span>
+                  )}
+                {!quiz.isStarted &&
+                  new Date() <= new Date(Number(quiz.endTime) / 1000) && (
+                    <span className="status pending">待开始</span>
+                  )}
               </div>
               <div className="quiz-actions">
+                {/* 查看排名按钮：所有测验都可以查看排名 */}
                 <button
                   className="action-button primary"
-                  onClick={() =>
-                    (window.location.href = `/quiz-rank/${quiz.id}`)
-                  }
+                  onClick={() => navigate(`/quiz-rank/${quiz.id}`)}
                 >
-                  View Rankings
+                  查看排名
                 </button>
+
+                {/* 复制链接按钮：所有状态下都可显示 */}
                 <button
                   className="action-button secondary"
                   onClick={() => copyQuizLink(quiz.id)}
                 >
-                  Copy Link
+                  复制链接
                 </button>
               </div>
             </div>
@@ -360,8 +379,8 @@ const QuizList: React.FC = () => {
       ) : (
         <div className="empty-container">
           <div className="empty-icon">📄</div>
-          <h3>No matching quizzes found</h3>
-          <p>Try adjusting your search or filters</p>
+          <h3>未找到匹配的测验</h3>
+          <p>请尝试调整搜索条件或筛选器</p>
         </div>
       )}
 

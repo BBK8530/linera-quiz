@@ -50,7 +50,7 @@ const UserInfo: React.FC = () => {
             {primaryWallet?.address.substring(2, 10)}
           </span>
         </div>
-        <p>
+        <div className="connection-status">
           Conway:{' '}
           {isLineraConnected ? (
             <FaCheckCircle className="connected-icon" />
@@ -59,21 +59,21 @@ const UserInfo: React.FC = () => {
           ) : (
             <FaTimesCircle className="disconnected-icon" />
           )}
-        </p>
+        </div>
       </div>
       <button
         className="settings-icon-button"
         onClick={() => setIsModalOpen(true)}
         title="设置昵称"
       >
-        <FaCog size={20} />
+        <FaCog size={16} />
       </button>
       <button
         className="logout-icon-button"
         onClick={handleLogout}
         title="登出"
       >
-        <FaSignOutAlt size={20} />
+        <FaSignOutAlt size={16} />
       </button>
 
       {/* 昵称设置模态框 */}

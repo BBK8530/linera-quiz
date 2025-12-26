@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { lineraAdapter } from '../providers/LineraAdapter';
+import { useConnection } from '../contexts/ConnectionContext';
 import { useDynamicContext } from '@dynamic-labs/sdk-react-core';
 
 interface Question {
@@ -34,6 +34,7 @@ const QuizTakingPage: React.FC = () => {
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
   const { primaryWallet } = useDynamicContext();
+  const { queryApplication, onNewBlock, offNewBlock } = useConnection();
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [rankings, setRankings] = useState<Ranking[]>([]);
@@ -50,21 +51,13 @@ const QuizTakingPage: React.FC = () => {
 
   // Fetch quiz details
   const fetchQuizDetails = useCallback(async () => {
-    if (!quizId || !primaryWallet?.address) return;
+    if (!quizId) return;
 
     try {
       setLoading(true);
       setError(null);
 
-      // Connect to Linera if not already connected
-      await lineraAdapter.connect(primaryWallet);
-
-      // Set application if not already set
-      if (!lineraAdapter.isApplicationSet()) {
-        await lineraAdapter.setApplication();
-      }
-
-      // Fetch quiz details
+      // Fetch quiz details using ConnectionContext
       const quizQuery = `
         query GetQuiz($quizId: String!) {
           quiz(id: $quizId) {
@@ -87,16 +80,22 @@ const QuizTakingPage: React.FC = () => {
         }
       `;
 
-      const quizResult = await lineraAdapter.queryApplication<{
-        data: { quiz: Quiz };
-      }>({
+      const quizResult = await queryApplication({
         query: quizQuery,
         variables: { quizId },
       });
 
-      if (quizResult.data?.quiz) {
-        setQuiz(quizResult.data.quiz);
-        setTimeRemaining(quizResult.data.quiz.duration * 60); // Convert minutes to seconds
+      if (
+        quizResult &&
+        typeof quizResult === 'object' &&
+        'data' in quizResult &&
+        quizResult.data &&
+        typeof quizResult.data === 'object' &&
+        'quiz' in quizResult.data
+      ) {
+        const quizData = quizResult.data.quiz as Quiz;
+        setQuiz(quizData);
+        setTimeRemaining(quizData.duration * 60); // Convert minutes to seconds
       } else {
         setError('Quiz not found');
       }
@@ -106,11 +105,11 @@ const QuizTakingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [quizId, primaryWallet]);
+  }, [quizId, queryApplication]);
 
   // Fetch quiz rankings
   const fetchQuizRankings = useCallback(async () => {
-    if (!quizId || !primaryWallet?.address) return;
+    if (!quizId) return;
 
     try {
       const rankingsQuery = `
@@ -124,20 +123,25 @@ const QuizTakingPage: React.FC = () => {
         }
       `;
 
-      const rankingsResult = await lineraAdapter.queryApplication<{
-        data: { quizRankings: Ranking[] };
-      }>({
+      const rankingsResult = await queryApplication({
         query: rankingsQuery,
         variables: { quizId },
       });
 
-      if (rankingsResult.data?.quizRankings) {
-        setRankings(rankingsResult.data.quizRankings);
+      if (
+        rankingsResult &&
+        typeof rankingsResult === 'object' &&
+        'data' in rankingsResult &&
+        rankingsResult.data &&
+        typeof rankingsResult.data === 'object' &&
+        'quizRankings' in rankingsResult.data
+      ) {
+        setRankings(rankingsResult.data.quizRankings as Ranking[]);
       }
     } catch (err) {
       console.error('Failed to fetch quiz rankings:', err);
     }
-  }, [quizId, primaryWallet]);
+  }, [quizId, queryApplication]);
 
   // Handle quiz submission
   const handleQuizSubmit = useCallback(async () => {
@@ -171,8 +175,8 @@ const QuizTakingPage: React.FC = () => {
         }),
       );
 
-      await lineraAdapter.mutateApplication({
-        mutation,
+      await queryApplication({
+        query: mutation,
         variables: {
           quizId: quiz.id,
           answers,
@@ -190,8 +194,31 @@ const QuizTakingPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [quiz, primaryWallet, selectedAnswers, fetchQuizRankings]);
+  }, [
+    quiz,
+    primaryWallet,
+    selectedAnswers,
+    fetchQuizRankings,
+    queryApplication,
+  ]);
 
+  // Handle new block event - refresh data
+  const handleNewBlock = useCallback(() => {
+    console.log(
+      '🔄 New block received, refreshing quiz details and rankings...',
+    );
+    fetchQuizRankings();
+  }, [fetchQuizRankings]);
+
+  // Register new block listener
+  useEffect(() => {
+    onNewBlock(handleNewBlock);
+    return () => {
+      offNewBlock(handleNewBlock);
+    };
+  }, [onNewBlock, offNewBlock, handleNewBlock]);
+
+  // Initial data fetch
   useEffect(() => {
     fetchQuizDetails();
     fetchQuizRankings();

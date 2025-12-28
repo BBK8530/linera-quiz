@@ -137,6 +137,9 @@ const QuizTakingPage: React.FC = () => {
             // Check if quiz has already started
             const hasStarted = now.getTime() >= startTime.getTime();
             setIsQuizStarted(hasStarted);
+            if (hasStarted) {
+              setQuizStartTime(now.getTime());
+            }
 
             // Calculate time until start if quiz hasn't started yet
             if (!hasStarted) {
@@ -436,7 +439,7 @@ const QuizTakingPage: React.FC = () => {
           )}
           <button
             className="action-button primary"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/quizzes')}
           >
             Back to Quizzes
           </button>
@@ -661,7 +664,7 @@ const QuizTakingPage: React.FC = () => {
                     <label
                       key={index}
                       className={`option ${isSelected ? 'selected' : ''} ${
-                        currentQuestion.type === 'multiple'
+                        currentQuestion.type === 'checkbox'
                           ? 'option-multiple'
                           : 'option-single'
                       }`}
@@ -670,41 +673,14 @@ const QuizTakingPage: React.FC = () => {
                         handleAnswerSelect(
                           currentQuestion.id,
                           index,
-                          currentQuestion.type === 'multiple',
+                          currentQuestion.type === 'checkbox',
                         );
                       }}
                     >
-                      {currentQuestion.type === 'multiple' && (
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={e => {
-                            e.stopPropagation();
-                            handleAnswerSelect(currentQuestion.id, index, true);
-                          }}
-                          className="option-checkbox"
-                        />
-                      )}
                       <span className="option-number">
                         {String.fromCharCode(65 + index)}.
                       </span>
                       <span className="option-text">{option}</span>
-                      {currentQuestion.type === 'single' && (
-                        <input
-                          type="radio"
-                          name={`question-${currentQuestion.id}`}
-                          checked={isSelected}
-                          onChange={e => {
-                            e.stopPropagation();
-                            handleAnswerSelect(
-                              currentQuestion.id,
-                              index,
-                              false,
-                            );
-                          }}
-                          className="option-radio"
-                        />
-                      )}
                     </label>
                   );
                 })}
@@ -817,11 +793,9 @@ const QuizTakingPage: React.FC = () => {
                             : ''
                         }`}
                       >
-                        <span className="rank">#{ranking.rank}</span>
+                        <span className="rank">{index + 1}</span>
                         <span className="nickname">{ranking.nickname}</span>
-                        <span className="score">
-                          {ranking.score}/{quiz.questions.length}
-                        </span>
+                        <span className="score">{ranking.score}</span>
                       </div>
                     ))}
                   </div>
@@ -836,18 +810,9 @@ const QuizTakingPage: React.FC = () => {
             <div className="result-actions">
               <button
                 className="action-button primary"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/quizzes')}
               >
                 Back to Quizzes
-              </button>
-              <button
-                className="action-button secondary"
-                onClick={() => {
-                  // 重新加载页面以开始新的测验
-                  window.location.reload();
-                }}
-              >
-                Try Again
               </button>
             </div>
           </div>
@@ -862,11 +827,9 @@ const QuizTakingPage: React.FC = () => {
             <div className="rankings-list">
               {rankings.slice(0, 10).map((ranking, index) => (
                 <div key={index} className="ranking-item">
-                  <span className="rank">#{ranking.rank}</span>
+                  <span className="rank">{index + 1}</span>
                   <span className="nickname">{ranking.nickname}</span>
-                  <span className="score">
-                    {ranking.score}/{quiz.questions.length}
-                  </span>
+                  <span className="score">{ranking.score}</span>
                 </div>
               ))}
             </div>

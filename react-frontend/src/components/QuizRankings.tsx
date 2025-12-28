@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import './QuizRankings.css';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useConnection } from '../contexts/ConnectionContext';
 import { GET_QUIZ_SET, GET_QUIZ_LEADERBOARD } from '../graphql/quizQueries';
@@ -19,10 +20,7 @@ const QuizRankings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [sortBy, setSortBy] = useState<'score' | 'completedAt' | 'nickname'>(
-    'score',
-  );
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // Remove sort state variables
 
   const pageSize = 10;
 
@@ -106,40 +104,12 @@ const QuizRankings: React.FC = () => {
     fetchQuizRankings();
   }, [fetchQuizDetails, fetchQuizRankings]);
 
-  // Sort rankings
-  const sortedRankings = [...rankings].sort((a, b) => {
-    let comparison = 0;
-
-    switch (sortBy) {
-      case 'score':
-        comparison = a.score - b.score;
-        break;
-      case 'completedAt':
-        comparison = Number(a.completedAt) - Number(b.completedAt);
-        break;
-      case 'nickname':
-        comparison = a.nickname.localeCompare(b.nickname);
-        break;
-      default:
-        comparison = a.rank - b.rank;
-    }
-
-    return sortOrder === 'asc' ? comparison : -comparison;
-  });
-
-  // Handle sort
-  const handleSort = (field: 'score' | 'completedAt' | 'nickname') => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('desc');
-    }
-  };
-
   // Pagination
-  const totalPages = Math.ceil(sortedRankings.length / pageSize);
-  const paginatedRankings = sortedRankings.slice(
+  const totalPages = Math.ceil(rankings.length / pageSize);
+  // Remove sort function
+
+  // Sort rankings - removed
+  const paginatedRankings = rankings.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
@@ -166,40 +136,21 @@ const QuizRankings: React.FC = () => {
   if (loading) {
     return (
       <div className="quiz-rankings">
-        <div className="rankings-header">
-          <h2>Quiz Rankings</h2>
-          <div
-            className="skeleton-text"
-            style={{ height: '44px', width: '200px' }}
-          ></div>
-        </div>
         <div className="rankings-table-container">
           <table className="rankings-table">
             <thead>
               <tr>
                 <th className="rank-column">
-                  <div
-                    className="skeleton-text"
-                    style={{ width: '40px', height: '20px' }}
-                  ></div>
+                  <div className="skeleton-text skeleton-text--rank"></div>
                 </th>
                 <th className="nickname-column">
-                  <div
-                    className="skeleton-text"
-                    style={{ width: '150px', height: '20px' }}
-                  ></div>
+                  <div className="skeleton-text skeleton-text--nickname"></div>
                 </th>
                 <th className="score-column">
-                  <div
-                    className="skeleton-text"
-                    style={{ width: '100px', height: '20px' }}
-                  ></div>
+                  <div className="skeleton-text skeleton-text--score"></div>
                 </th>
                 <th className="time-column">
-                  <div
-                    className="skeleton-text"
-                    style={{ width: '150px', height: '20px' }}
-                  ></div>
+                  <div className="skeleton-text skeleton-text--time"></div>
                 </th>
               </tr>
             </thead>
@@ -209,28 +160,16 @@ const QuizRankings: React.FC = () => {
                 .map((_, i) => (
                   <tr key={i} className="skeleton-row">
                     <td>
-                      <div
-                        className="skeleton-text"
-                        style={{ width: '40px', height: '20px' }}
-                      ></div>
+                      <div className="skeleton-text skeleton-text--rank"></div>
                     </td>
                     <td>
-                      <div
-                        className="skeleton-text"
-                        style={{ width: '150px', height: '20px' }}
-                      ></div>
+                      <div className="skeleton-text skeleton-text--nickname"></div>
                     </td>
                     <td>
-                      <div
-                        className="skeleton-text"
-                        style={{ width: '100px', height: '20px' }}
-                      ></div>
+                      <div className="skeleton-text skeleton-text--score"></div>
                     </td>
                     <td>
-                      <div
-                        className="skeleton-text"
-                        style={{ width: '150px', height: '20px' }}
-                      ></div>
+                      <div className="skeleton-text skeleton-text--time"></div>
                     </td>
                   </tr>
                 ))}
@@ -244,14 +183,11 @@ const QuizRankings: React.FC = () => {
   if (error) {
     return (
       <div className="quiz-rankings">
-        <div className="rankings-header">
-          <h2>Quiz Rankings</h2>
-        </div>
         <div className="error-container">
           <p className="error-message">{error}</p>
           <button
             className="action-button primary"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/quizzes')}
           >
             Back to Quizzes
           </button>
@@ -270,7 +206,7 @@ const QuizRankings: React.FC = () => {
           <p className="error-message">Quiz not found</p>
           <button
             className="action-button primary"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/quizzes')}
           >
             Back to Quizzes
           </button>
@@ -282,56 +218,41 @@ const QuizRankings: React.FC = () => {
   return (
     <div className="quiz-rankings">
       <div className="quiz-info">
-        <h2>{quiz.title}</h2>
-        <p className="quiz-description">{quiz.description}</p>
-        <div className="quiz-meta quiz-meta--rankings">
-          <span>
-            <strong>Creator:</strong> {quiz.creatorNickname}
-          </span>
-          <span>
-            <strong>Questions:</strong> {quiz.questions.length}
-          </span>
-          <span className="meta-item">
-            <strong>Status:</strong>{' '}
-            {new Date() > new Date(Number(quiz.endTime) / 1000)
-              ? '已结束'
-              : quiz.isStarted
-              ? '进行中'
-              : '待开始'}
-          </span>
-        </div>
-        <button
-          className="action-button primary"
-          onClick={() => navigate(`/quiz/${quiz.id}`)}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+          }}
         >
-          Take This Quiz
-        </button>
-      </div>
-
-      <div className="rankings-header">
-        <h3>Rankings</h3>
-        <div className="sort-controls">
-          <label>Sort by: </label>
-          <select
-            className="sort-select"
-            value={sortBy}
-            onChange={e =>
-              handleSort(e.target.value as 'score' | 'completedAt' | 'nickname')
-            }
-          >
-            <option value="score">Score</option>
-            <option value="completedAt">Completed At</option>
-            <option value="nickname">Nickname</option>
-          </select>
+          <div>
+            <h2>{quiz.title}</h2>
+            <p className="quiz-description">{quiz.description}</p>
+            <div className="quiz-meta quiz-meta--rankings">
+              <span>
+                <strong>Creator:</strong> {quiz.creatorNickname}
+              </span>
+              <span>
+                <strong>Questions:</strong> {quiz.questions.length}
+              </span>
+              <span className="meta-item">
+                <strong>Status:</strong>
+                {new Date() > new Date(Number(quiz.endTime) / 1000)
+                  ? '已结束'
+                  : quiz.isStarted
+                  ? '进行中'
+                  : '待开始'}
+              </span>
+            </div>
+          </div>
           <button
-            className="sort-order-button"
-            onClick={() => handleSort(sortBy)}
+            className="action-button primary"
+            onClick={() => navigate(`/quiz/${quiz.id}`)}
           >
-            {sortOrder === 'asc' ? '↑' : '↓'}
+            Take This Quiz
           </button>
         </div>
       </div>
-
       <div className="rankings-table-container">
         {rankings.length > 0 ? (
           <table className="rankings-table">
@@ -348,7 +269,7 @@ const QuizRankings: React.FC = () => {
                 <tr key={index} className="ranking-row">
                   <td className="rank-column">
                     <span className={`rank-badge rank-${ranking.rank}`}>
-                      #{ranking.rank}
+                      {index + 1}
                     </span>
                   </td>
                   <td className="nickname-column">

@@ -87,7 +87,7 @@ const QuizList: React.FC = () => {
 
   // 订阅测验事件
   useSubscription(QUIZ_EVENTS_SUBSCRIPTION_APOLLO, {
-    variables: { chainId: import.meta.env.CHAIN_ID },
+    variables: { chainId: import.meta.env.VITE_CHAIN_ID },
     onData: ({ data }) => {
       console.log('Subscription data:', data);
     },

@@ -175,7 +175,10 @@ impl QuizContract {
         );
 
         // 在主链上直接执行设置昵称操作
-        let _ = self.set_nickname(params).await;
+        if let Err(e) = self.set_nickname(params).await {
+            error!("跨链设置昵称失败: {:?}", e);
+            // TODO: 实现重试机制或错误通知
+        }
     }
 
     /// 处理跨链创建测验
@@ -188,7 +191,10 @@ impl QuizContract {
         info!("处理来自链 {} 的跨链创建测验请求: {}", from_chain_id, title);
 
         // 在主链上直接执行创建测验操作
-        let _ = self.create_quiz(params).await;
+        if let Err(e) = self.create_quiz(params).await {
+            error!("跨链创建测验失败: {:?}", e);
+            // TODO: 实现重试机制或错误通知
+        }
     }
 
     /// 处理跨链提交答案
@@ -204,7 +210,10 @@ impl QuizContract {
         );
 
         // 在主链上直接执行提交答案操作
-        let _ = self.submit_answers(params).await;
+        if let Err(e) = self.submit_answers(params).await {
+            error!("跨链提交答案失败: {:?}", e);
+            // TODO: 实现重试机制或错误通知
+        }
     }
 
     /// 处理跨链开始测验
@@ -215,7 +224,10 @@ impl QuizContract {
         );
 
         // 在主链上直接执行开始测验操作
-        let _ = self.start_quiz(quiz_id).await;
+        if let Err(e) = self.start_quiz(quiz_id).await {
+            error!("跨链开始测验失败: {:?}", e);
+            // TODO: 实现重试机制或错误通知
+        }
     }
 
     /// 处理跨链报名测验
@@ -226,7 +238,10 @@ impl QuizContract {
         );
 
         // 在主链上直接执行报名测验操作
-        let _ = self.register_for_quiz(quiz_id).await;
+        if let Err(e) = self.register_for_quiz(quiz_id).await {
+            error!("跨链报名测验失败: {:?}", e);
+            // TODO: 实现重试机制或错误通知
+        }
     }
 
     async fn set_nickname(&mut self, params: SetNicknameParams) -> Result<(), quiz::QuizError> {
@@ -354,6 +369,10 @@ impl QuizContract {
             .ok_or(quiz::QuizError::InsufficientPermissions)?
             .to_string();
 
+        info!(
+            "Creating new quiz with title '{}' by user '{}'",
+            params.title, wallet_address
+        );
         // 验证用户是否存在
         let user = self
             .state
@@ -497,7 +516,7 @@ impl QuizContract {
             .checked_add(1)
             .ok_or(quiz::QuizError::InternalError)?;
         self.state.next_quiz_id.set(next_id);
-
+        info!("Quiz created successfully with ID: {}", quiz_id);
         Ok(())
     }
 
@@ -508,6 +527,10 @@ impl QuizContract {
             .ok_or(quiz::QuizError::InsufficientPermissions)?
             .to_string();
         let now = self.runtime.system_time();
+        info!(
+            "User '{}' submitting answers for quiz ID: {}",
+            wallet_address, params.quiz_id
+        );
 
         // 检查Quiz是否存在
         let mut quiz_set = self
@@ -698,6 +721,10 @@ impl QuizContract {
             .authenticated_signer()
             .ok_or(quiz::QuizError::InsufficientPermissions)?
             .to_string();
+        info!(
+            "User '{}' attempting to start quiz ID: {}",
+            wallet_address, quiz_id
+        );
         let now = self.runtime.system_time();
 
         // 检查Quiz是否存在
@@ -747,6 +774,10 @@ impl QuizContract {
             .authenticated_signer()
             .ok_or(quiz::QuizError::InsufficientPermissions)?
             .to_string();
+        info!(
+            "User '{}' registering for quiz ID: {}",
+            wallet_address, quiz_id
+        );
         let now = self.runtime.system_time();
 
         // 检查Quiz是否存在

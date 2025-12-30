@@ -2,7 +2,7 @@
 
 use async_graphql::{Request, Response, Schema};
 use linera_sdk::graphql::GraphQLMutationRoot;
-use linera_sdk::linera_base_types::WithServiceAbi;
+use linera_sdk::linera_base_types::{ChainId, WithServiceAbi};
 use linera_sdk::views::View;
 use linera_sdk::{Service, ServiceRuntime};
 use quiz::state::{QuizEvent as InternalQuizEvent, QuizState};
@@ -497,15 +497,12 @@ struct SubscriptionRoot {
     state: Arc<QuizState>,
 }
 
-#[derive(async_graphql::Enum, Debug, Clone, PartialEq)]
-enum QuizEvent {
-    QuizCreated(QuizSetView),
-    AnswerSubmitted(UserAttemptView),
-}
-
 #[async_graphql::Subscription]
 impl SubscriptionRoot {
-    async fn notifications(&self) -> impl futures::Stream<Item = QuizEvent> {
+    async fn notifications(
+        &self,
+        #[graphql(name = "chainId")] _chain_id: ChainId,
+    ) -> impl futures::Stream<Item = QuizEvent> {
         let state = self.state.clone();
         futures::stream::unfold(0, move |last_index| {
             let state = state.clone();
